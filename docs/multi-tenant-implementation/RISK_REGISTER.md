@@ -9,5 +9,6 @@
 | R-05 | Unsafe platform-admin bypass | High | 3, 4 | Enforce a distinct, explicit namespace/API and authentication flow for platform-admin access. | Open |
 | R-06 | Medusa framework upgrade breaking a patch | Medium | 2 | If patching Medusa is necessary, implement a startup validation check that ensures the patch is applied correctly and fails safely if missing. | Open |
 | R-07 | Background job without tenant context | Medium | 5 | Wrap job handlers to extract tenant ID from the signed job payload and set AsyncLocalStorage context. | Open |
-| R-08 | Unprotected Medusa core routes | High | 3, 5 | Wrap or override unsafe core routes, or block them entirely if they cannot be safely tenant-scoped. | Open |
+| R-08 | Unprotected Medusa core routes leak data and protected routes fail-closed | Critical | 3 | Implement and verify a minimal Medusa 2.18.0 framework patch for HTTP transaction propagation. Keep routes with unprotected entity dependencies blocked until their isolation mechanism is approved and implemented. | Open |
 | R-09 | Incomplete tenant ownership mapping | Medium | 1 | Strictly define the source of truth for Store ownership (e.g., via a custom `TenantStore` link module) and prevent duplicate mappings. | Open |
+| R-10 | Express middleware cannot propagate transactions to nested workflows | Critical | 3 | Explicitly pass the resolved transaction manager into workflow executions (`context: { manager: txManager }`) and prove propagation via integration tests. | Open |
