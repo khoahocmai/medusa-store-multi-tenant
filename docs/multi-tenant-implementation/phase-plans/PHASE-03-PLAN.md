@@ -81,7 +81,7 @@ await withTenantTransaction(req.scope.resolve("manager"), async (txManager) => {
 - **Domain Normalization & Spoofing Protection:** The `Host` header will be aggressively normalized. We will define strict trusted-proxy rules to prevent `X-Forwarded-Host` spoofing, explicitly rejecting unverified custom domain headers.
 
 ## 5. Explicit Platform Admin Resolution (Deviation Required)
-**STATUS: APPROVED DEVIATION PENDING IMPLEMENTATION**
+**STATUS: APPROVED DEVIATION**
 Phase 1 did not define a Platform Admin model. We will implement a minimal `PlatformMembership` model.
 - **Model:**
   - `id`
@@ -147,7 +147,7 @@ We must choose one of the following paths:
 - *Reason:* Tarn.js `acquire` events are not awaited.
 
 **Option B: Minimal Medusa 2.18.0 Framework Patch**
-- *Status:* `SELECTED_PENDING_USER_APPROVAL`
+- *Status:* `SELECTED`
 - *Reason:* Targeted, minimal patch to inject `withTenantTransaction` around core HTTP handlers restores core commerce flows safely.
 
 **Option C: Expanded RLS plus Complete Custom Commerce APIs**

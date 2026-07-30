@@ -27,6 +27,6 @@
 **Decision:** We must choose a propagation strategy that preserves core commerce usability without violating the MVP scope.
 **Alternatives considered:**
 1. **Supported Knex Pool Hooks (Status: REJECTED_BY_ARCHITECTURE_SPIKE):** Tarn.js `acquire` events are not awaited, meaning `set_config` races with application queries. `afterCreate` only runs once and cannot inject per-request tenant context.
-2. **Minimal Version-Specific Framework Patch (Status: SELECTED_PENDING_USER_APPROVAL):** Patch Medusa's internal HTTP handler pipeline to globally inject `withTenantTransaction`. This restores core commerce flows without rewriting them.
+2. **Minimal Version-Specific Framework Patch (Status: SELECTED):** Patch Medusa's internal HTTP handler pipeline to globally inject `withTenantTransaction`. This restores core commerce flows without rewriting them.
 3. **Expanded RLS + Custom Commerce APIs (Status: REJECTED_OUT_OF_SCOPE):** Reject core routes entirely. Add RLS everywhere and build custom `/store/tenant/...` routes. Enormous maintenance cost, massive scope explosion. Violates MVP.
 **Consequences:** Awaiting user approval to apply the minimal framework patch for HTTP transaction propagation.
