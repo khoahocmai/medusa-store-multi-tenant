@@ -4,8 +4,8 @@
 
 | Phase | Name | Status | Report | Approved by user |
 |---|---|---|---|---|
-| 0 | Repository Audit | IMPLEMENTED_AWAITING_APPROVAL | phase-reports/PHASE-00-AUDIT.md | No |
-| 1 | Foundation and Models | NOT_STARTED | — | No |
+| 0 | Repository Audit | APPROVED_BY_USER | phase-reports/PHASE-00-AUDIT.md | Yes |
+| 1 | Foundation and Models | IMPLEMENTED_AWAITING_APPROVAL | phase-reports/PHASE-01-FOUNDATION.md | No |
 | 2 | PostgreSQL RLS and Tenant Context | NOT_STARTED | — | No |
 | 3 | Auth, Tenant Resolution, Middleware | NOT_STARTED | — | No |
 | 4 | Tenant and Store Provisioning APIs | NOT_STARTED | — | No |
@@ -21,7 +21,7 @@
 - **Package Manager:** `npm@10.8.2`
 - **Medusa Version:** `2.18.0`
 - **Database Strategy:** PostgreSQL Row Level Security (RLS) with single database
-- **Last Completed Phase:** 0
-- **Next Allowed Phase:** 1 (Pending Approval)
+- **Last Completed Phase:** 1
+- **Next Allowed Phase:** 2 (Pending Approval)
 - **Known Blockers:** None
 - **Approved MVP Scope:** Single Medusa Application, Single PostgreSQL DB, Tenant-aware context, PostgreSQL RLS. Platform -> Tenant -> Multiple Stores.
