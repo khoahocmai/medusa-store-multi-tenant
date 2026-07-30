@@ -1,16 +1,11 @@
-# Phase 1 Execution Tasks
+# Phase 2 Execution Tasks
 
-- `[x]` Read requirements and skill instructions
-- `[x]` Create `Tenant` data model
-- `[x]` Create `TenantMembership` data model
-- `[x]` Create `StoreLocator` data model
-- `[x]` Create Tenant module service
-- `[x]` Export Tenant module definition
-- `[x]` Register Tenant module in `medusa-config.ts`
-- `[x]` Define module links (Tenant to Store, Sales Channel, Region)
-- `[x]` Generate migrations for Tenant module
-- `[x]` Run database migrations
-- `[x]` Write model/module integration tests
-- `[x]` Run build to verify types
-- `[x]` Write Phase 1 Report
+- `[x]` Create database role setup script
+- `[x]` Create raw SQL migration for RLS (store, product, order, customer)
+- `[x]` Run RLS migration
+- `[x]` Implement `TenantContext` using AsyncLocalStorage
+- `[x]` Implement `withTenantTransaction` wrapper
+- `[x]` Write integration tests for pool isolation and RLS
+- `[x]` Run integration tests to verify Phase 2
+- `[x]` Write Phase 2 Report
 - `[x]` Update `PROJECT_STATE.md`
