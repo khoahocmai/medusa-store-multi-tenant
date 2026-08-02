@@ -8,7 +8,7 @@
 | 1 | Foundation and Models | APPROVED_BY_USER | phase-reports/PHASE-01-FOUNDATION.md | Yes |
 | 2 | PostgreSQL RLS and Tenant Context | APPROVED_BY_USER | phase-reports/PHASE-02-RLS-CONTEXT.md | Yes |
 | 3 | Auth, Tenant Resolution, Middleware | APPROVED_BY_USER | phase-reports/PHASE-03-AUTH-MIDDLEWARE.md | Yes |
-| 4 | Tenant and Store Provisioning APIs | IMPLEMENTED_AWAITING_APPROVAL | phase-reports/PHASE-04-PROVISIONING-API.md | No |
+| 4 | Tenant and Store Provisioning APIs | APPROVED_BY_USER | phase-reports/PHASE-04-PROVISIONING-API.md | Yes |
 | 5 | Isolation Coverage and Verification | NOT_STARTED | — | No |
 | 6 | Final Verification and Handoff | NOT_STARTED | — | No |
 
@@ -17,7 +17,7 @@
 - **Repository Root:** `D:/workspace/medusa-store-multi-tenant`
 - **Branch:** `feat/multi-tenant`
 - **Starting Commit:** `7695e4a40248128d5ae880571350906a2c54185f`
-- **Current Commit:** `87f5899b7f89fc7de5729728726b520e101f00ba`
+- **Current Commit:** `7d0a0cc7146e89204823d234d1dd5ebedd45c43f`
 - **Package Manager:** `npm@10.8.2`
 - **Medusa Version:** `2.18.0`
 - **Database Strategy:** PostgreSQL Row Level Security (RLS) with single database
@@ -27,15 +27,14 @@
 
 - **Master Contract Path:** `docs/multi-tenant-implementation/MASTER_CONTRACT.md`
 - **Master Contract Commit:** `fc2b8b3`
-- **Current Phase:** 4
-- **Current Phase Status:** IMPLEMENTED_AWAITING_APPROVAL
-- **Current Phase Plan Path:** `docs/multi-tenant-implementation/phase-plans/PHASE-04-PLAN.md`
-- **Current Phase Plan Status:** APPROVED_BY_USER
-- **Approved Plan Commit:** `87f5899b7f89fc7de5729728726b520e101f00ba`
-- **Plan Approval Command:** `APPROVE PHASE 4 PLAN`
-- **Last Approved Phase:** 3
-- **Next Allowed Action:** APPROVE PHASE 4
-*(Note: `PHASE-04-PLAN.md` contains stale metadata indicating it is DRAFT. This is a known inconsistency; the plan body is preserved immutable as requested and the authoritative status is APPROVED_BY_USER as recorded above.)*
+- **Current Phase:** 5
+- **Current Phase Status:** NOT_STARTED
+- **Current Phase Plan Path:** `docs/multi-tenant-implementation/phase-plans/PHASE-05-PLAN.md`
+- **Current Phase Plan Status:** DRAFT_AWAITING_USER_APPROVAL
+- **Approved Plan Commit:** `N/A`
+- **Plan Approval Command:** `APPROVE PHASE 5 PLAN`
+- **Last Approved Phase:** 4
+- **Next Allowed Action:** APPROVE PHASE 5 PLAN
 
 ## Permanent Documentation Rules
 
@@ -51,19 +50,14 @@
 * The agent must not modify an approved phase plan during implementation.
 * Newly discovered work must be reported as a blocker, limitation, or future recommendation. It must not be silently added to the current phase.
 
-## Current Phase 4: Tenant & Store Provisioning APIs (IN PROGRESS)
+## Current Phase 5: Isolation Coverage and Verification (NOT STARTED)
 
-*   **Status:** IMPLEMENTED_AWAITING_APPROVAL
+*   **Status:** NOT_STARTED
 *   **Approved by user:** No
-*   **Phase 4 Plan Status:** APPROVED_BY_USER
-*   **ADR-004 Status:** ACCEPTED
-*   **Next Allowed Action:** APPROVE PHASE 4
-*   **Start Date:** 2026-07-29
+*   **Phase 5 Plan Status:** DRAFT_AWAITING_USER_APPROVAL
+*   **Next Allowed Action:** APPROVE PHASE 5 PLAN
+*   **Start Date:** 2026-08-02
 *   **End Date:** TBD
 *   **Progress:**
-  * Provisioning workflows implemented (tenant, membership, store, locator creation).
-  * API routes implemented (admin/platform/tenants, admin/tenant/stores).
-  * HTTP transactions patched via framework patch (tested with moduleNameMapper resolution).
-  * Custom test harness isolates RLS and integration tests, bypassing test runners that previously blocked safe verification.
-  * All 26 approved tests mapped 1-to-1 in `walkthrough.md` with 29/29 successful assertions and explicit RLS DB isolation verification.
+  * Planning Phase 5
 * **Blocker:** None
