@@ -1,39 +1,39 @@
-import { EntityManager } from "@medusajs/framework/mikro-orm/postgresql"
+/**
+ * transaction-wrapper.ts
+ *
+ * Kept for explicit use in utility scripts (e.g. run-test.js DB setup) that
+ * need to run a Knex transaction with RLS context.
+ *
+ * NOTE: This wrapper is NO LONGER called from patch-helper.ts.  RLS context
+ * propagation to production routes happens via rls-pg-hook.ts (pg.Client-level
+ * BEGIN interceptor).
+ */
+
 import { tenantContext } from "./tenant-context"
 
-/**
- * Wraps a database operation in a transaction and applies the current tenant context
- * to the PostgreSQL session transaction-locally.
- *
- * @param manager The base EntityManager (usually from `sharedContext.transactionManager`)
- * @param work The function to execute inside the transaction
- */
-export async function withTenantTransaction<T>(
-  manager: EntityManager,
-  work: (txManager: EntityManager) => Promise<T>
+export async function withTenantTransactionKnex<T>(
+  pgConnection: any,
+  work: (trx: any) => Promise<T>
 ): Promise<T> {
   const ctx = tenantContext.getStore()
 
-  return await manager.transactional(async (txManager) => {
-    // If no context exists, we let RLS fail closed naturally.
+  return await pgConnection.transaction(async (trx: any) => {
     if (ctx) {
-      const tenantId = ctx.accessMode === "platform" ? "" : ctx.tenantId
+      const tenantId = ctx.accessMode === "platform" ? "" : (ctx.tenantId ?? "")
       const isPlatform = ctx.accessMode === "platform" ? "true" : "false"
 
-      // Use transaction-local config (is_local = true)
-      await txManager.execute(
+      await trx.raw(
         `SELECT set_config('app.current_tenant_id', ?, true),
                 set_config('app.is_platform_admin', ?, true)`,
         [tenantId, isPlatform]
       )
     } else {
-      // Ensure we clear it just in case, though is_local=true should prevent leak
-      await txManager.execute(
+      await trx.raw(
         `SELECT set_config('app.current_tenant_id', '', true),
                 set_config('app.is_platform_admin', 'false', true)`
       )
     }
 
-    return await work(txManager)
+    return await work(trx)
   })
 }

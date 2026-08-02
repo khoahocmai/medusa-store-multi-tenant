@@ -1,0 +1,17 @@
+diff --git a/node_modules/@medusajs/medusa/dist/loaders/index.js b/node_modules/@medusajs/medusa/dist/loaders/index.js
+index 9e06cd2..5a44ef2 100644
+--- a/node_modules/@medusajs/medusa/dist/loaders/index.js
++++ b/node_modules/@medusajs/medusa/dist/loaders/index.js
+@@ -131,7 +131,11 @@ async function default_1({ directory, expressApp, isTest, }) {
+         ? () => { }
+         : await loadEntrypoints(plugins, container, expressApp, rootDirectory);
+     const { createDefaultsWorkflow } = await import("@medusajs/core-flows");
+-    await createDefaultsWorkflow(container).run();
++    if (process.env.MEDUSA_SKIP_CORE_DEFAULTS !== "true") {
++        await createDefaultsWorkflow(container).run();
++    } else {
++        logger.warn("Skipping core defaults creation because MEDUSA_SKIP_CORE_DEFAULTS is true");
++    }
+     await onApplicationStart();
+     const shutdown = async () => {
+         const pgConnection = container.resolve(utils_1.ContainerRegistrationKeys.PG_CONNECTION);
