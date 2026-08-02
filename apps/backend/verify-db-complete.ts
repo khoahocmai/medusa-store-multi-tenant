@@ -45,7 +45,7 @@ async function runTests() {
   // TEST: Callback Query
   await tenantContext.run({ tenantId: "tenant_C", accessMode: "tenant" }, async () => {
     const client3 = await pool.connect();
-    await new Promise(resolve => {
+    await new Promise<void>(resolve => {
       client3.query("SELECT current_setting('app.current_tenant_id', true) as tenant", (err, res) => {
         console.log("Callback query tenant:", res.rows[0].tenant);
         resolve();
