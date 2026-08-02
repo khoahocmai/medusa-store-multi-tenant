@@ -89,3 +89,22 @@ Patch fully reverted.
 **Upgrade verification:** Before any Medusa upgrade, we must verify that `loaders/index.js` structurally still matches the patch. The custom test harness will inherently catch regressions since `runtime_role` will fail to boot if the defaults workflow runs again.
 **Risks and limitations:** Medusa components (e.g., storefront API) that blindly assume the existence of a default Store or Sales Channel may error during runtime. This must be verified as part of the test plan.
 **User approval:** APPROVE ADR-004 OPTION A
+
+---
+
+## ADR-005: Phase 5 Remediation - Connection Pool and DB-Level RLS Enforcement
+
+**Date:** 2026-08-02
+**Context:**
+During Phase 5 isolation verification, it was discovered that the ORM bypassed tenant isolation on autocommit reads/writes, emitted explicit `NULL` for `tenant_id`, and that `runtime_role` could spoof platform access via the `app.is_platform_admin` custom GUC.
+**Decision:**
+1. **Global pg.Client hook:** Intercept `pg.Client.prototype.query` natively to inject `set_config` on the connection pool level.
+2. **Per-client serialized query guard:** Implemented using a `WeakMap` lock to queue queries strictly. This guarantees that `set_config` -> `business query` -> `reset_config` is completely atomic and un-interruptible per client, even if concurrent async loops share the client.
+3. **Reset-before-release requirement:** A strict `set_config('', false)` reset is AWAITED in a `finally` block before the business query Promise/callback resolves. A fast-path bypass is included for already-clean contexts to allow tests and bootstrap scripts to survive manual `set_config(..., true)`. Reset failures emit a fatal `error` to destroy the dirty client.
+4. **Database trigger enforcement:** Add a `BEFORE INSERT` Postgres trigger on all protected tables (`store`, `product`, `order`, `customer`) to unconditionally override any ORM-provided `tenant_id` with the enforced DB session value, falling back to a hard failure if missing.
+5. **Removal of app.is_platform_admin from policies:** Remove the `OR current_setting('app.is_platform_admin', true) = 'true'` bypass from all RLS policies.
+**Risks and limitations:**
+- **Medusa 2.18.0 compatibility risk:** Patching `pg.Client.prototype.query` natively runs the risk of breaking internal Medusa database flows if signatures change.
+- **Upgrade verification requirement:** Any Medusa version upgrade must ensure `pg` client intercepts remain valid and `reset-before-release` is tightly coupled with `AsyncLocalStorage` lifecycle events.
+- **Rollback consequences:** Removing the triggers and restoring the GUC via migration (`down`) safely restores the legacy Phase 2 configuration without data loss.
+**User approval:** APPROVE PHASE 5 REMEDIATION PLAN

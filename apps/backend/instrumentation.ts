@@ -1,6 +1,9 @@
 // Uncomment this file to enable instrumentation and observability using OpenTelemetry
 // Refer to the docs for installation instructions: https://docs.medusajs.com/learn/debugging-and-testing/instrumentation
 
+import { installRlsPgHook } from "./src/utils/rls-pg-hook"
+installRlsPgHook()
+
 // import { registerOtel } from "@medusajs/medusa"
 // // If using an exporter other than Zipkin, require it here.
 // import { ZipkinExporter } from "@opentelemetry/exporter-zipkin"

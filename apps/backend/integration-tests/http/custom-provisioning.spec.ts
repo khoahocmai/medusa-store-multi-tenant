@@ -4,7 +4,7 @@ import { resolve } from "path"
 import { Client } from "pg"
 
 const DB_HOST = process.env.DB_HOST || "localhost"
-const TEST_DB_NAME = "medusa_multi_tenant_phase4_test"
+const TEST_DB_NAME = "medusa_multi_tenant_verification_db"
 const TEST_DB_ADMIN_URL = `postgres://postgres:postgres@${DB_HOST}:5432/postgres`
 const MIGRATION_ROLE_URL = `postgres://postgres:postgres@${DB_HOST}:5432/${TEST_DB_NAME}`
 const RUNTIME_ROLE_URL = `postgres://runtime_role:runtime_password@${DB_HOST}:5432/${TEST_DB_NAME}`
@@ -562,8 +562,8 @@ describe("Phase 4 Provisioning APIs and Isolation (Two-Role Harness)", () => {
     // Prove actual createStoresWorkflow output by inspecting the DB using a transaction to bypass RLS
     const pgConnection = container.resolve("__pg_connection__")
     const storeRaw = await pgConnection.transaction(async (trx: any) => {
-      await trx.raw(`SELECT set_config('app.current_tenant_id', ?, true)`, [tenant1.id])
-      return trx.raw(`SELECT * FROM store WHERE id = ?`, [freshStoreId])
+      await trx.raw(`/* BYPASS_RLS */ SELECT set_config('app.current_tenant_id', ?, true)`, [tenant1.id])
+      return trx.raw(`/* BYPASS_RLS */ SELECT * FROM store WHERE id = ?`, [freshStoreId])
     })
     expect(storeRaw.rows.length).toBe(1)
     

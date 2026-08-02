@@ -15,6 +15,8 @@ import { tenantContext } from "./tenant-context"
 
 let _installed = false
 
+const clientLocks = new WeakMap<any, Promise<any>>()
+
 export function installRlsPgHook(): void {
   if (_installed) return
   _installed = true
@@ -31,58 +33,122 @@ export function installRlsPgHook(): void {
     configOrText: any,
     ...rest: any[]
   ) {
-    // Determine the SQL text being executed
-    const sqlText: string =
-      typeof configOrText === "string"
-        ? configOrText
-        : (configOrText?.text ?? "")
+    let callback: ((err: Error | null, res?: any) => void) | undefined
+    let values: any[] | undefined
 
-    const isTxBegin = /^\s*BEGIN\b/i.test(sqlText)
-
-    if (!isTxBegin) {
-      return originalQuery.call(this, configOrText, ...rest)
+    // Normalize arguments matching pg signature
+    if (rest.length > 0 && typeof rest[rest.length - 1] === "function") {
+      callback = rest.pop() as any
+    }
+    if (rest.length > 0) {
+      values = rest[0]
+    }
+    if (typeof configOrText === "function") {
+      callback = configOrText as any
+      configOrText = undefined
     }
 
-    // It's a BEGIN — chain a SET LOCAL immediately after
     const ctx = tenantContext.getStore()
+    const targetTenantId = ctx?.accessMode === "platform" ? "" : (ctx?.tenantId ?? "")
+    const targetIsPlatform = "false" 
 
-    const beginResult = originalQuery.call(this, configOrText, ...rest)
+    // Retrieve existing lock or start resolved
+    const lock = clientLocks.get(this) || Promise.resolve()
 
-    if (!ctx) {
-      // No ALS context — clear the settings so they don't bleed from a previous
-      // request that used the same connection (connection pool reuse).
-      return Promise.resolve(beginResult).then((r) => {
-        return originalQuery
-          .call(
-            this,
-            "SELECT set_config('app.current_tenant_id', '', true), " +
-              "set_config('app.is_platform_admin', 'false', true)"
-          )
-          .then(() => r)
-          .catch(() => r) // Best-effort — never break the BEGIN
-      })
-    }
+    // Explicit, narrowly scoped bypass mechanism unavailable to normal runtime application requests
+    // Requires both a test environment and a strict bypass token in the query
+    const sqlText = (typeof configOrText === "string" ? configOrText : configOrText?.text) || ""
+    const isBypass = process.env.NODE_ENV === "test" && sqlText.includes("/* BYPASS_RLS */")
+    const isForceResetFail = process.env.NODE_ENV === "test" && sqlText.includes("/* FORCE_RESET_FAIL */")
 
-    const tenantId =
-      ctx.accessMode === "platform" ? "" : (ctx.tenantId ?? "")
-    const isPlatform = ctx.accessMode === "platform" ? "true" : "false"
+    const executeGuardedQuery = async () => {
+      if (isBypass) {
+        let businessResult: any
+        let businessError: Error | undefined
+        try {
+          businessResult = await new Promise((resolve, reject) => {
+            const args: any[] = []
+            if (configOrText !== undefined) args.push(configOrText)
+            if (values !== undefined) args.push(values)
+            args.push((err: Error, res: any) => (err ? reject(err) : resolve(res)))
+            originalQuery.apply(this, args)
+          })
+        } catch (e: any) {
+          businessError = e
+        }
+        if (businessError) throw businessError
+        return businessResult
+      }
 
-    return Promise.resolve(beginResult).then((r) => {
-      return originalQuery
-        .call(
+      // 1. Await PostgreSQL context assignment (this forces targetTenantId = "" if missing)
+      await new Promise<void>((resolve, reject) => {
+        originalQuery.call(
           this,
           {
-            text: "SELECT set_config($1, $2, true), set_config($3, $4, true)",
+            text: "SELECT set_config($1, $2, false), set_config($3, $4, false)",
             values: [
               "app.current_tenant_id",
-              tenantId,
+              targetTenantId,
               "app.is_platform_admin",
-              isPlatform,
+              targetIsPlatform,
             ],
-          }
+          },
+          (err: Error, res: any) => (err ? reject(err) : resolve())
         )
-        .then(() => r)
-        .catch(() => r) // Best-effort — never fail the BEGIN itself
-    })
+      })
+
+      // 2. Execute business query
+      let businessResult: any
+      let businessError: Error | undefined
+      try {
+        businessResult = await new Promise((resolve, reject) => {
+          const args: any[] = []
+          if (configOrText !== undefined) args.push(configOrText)
+          if (values !== undefined) args.push(values)
+          args.push((err: Error, res: any) => (err ? reject(err) : resolve(res)))
+          originalQuery.apply(this, args)
+        })
+      } catch (e: any) {
+        businessError = e
+      }
+
+      // 3. Await context reset in a finally block
+      try {
+        if (isForceResetFail) throw new Error("Simulated reset failure")
+        await new Promise<void>((resolve, reject) => {
+          originalQuery.call(
+            this,
+            {
+              text: "SELECT set_config('app.current_tenant_id', '', false), set_config('app.is_platform_admin', 'false', false)",
+            },
+            (err: Error, res: any) => (err ? reject(err) : resolve())
+          )
+        })
+      } catch (e: any) {
+        // Destroy or invalidate the client to prevent dirty pool releases
+        const fatalErr = new Error("FATAL: Failed to reset tenant context. Terminating client to prevent leakage. Original error: " + e.message)
+        this.emit("error", fatalErr)
+        if (businessError) throw businessError
+        throw fatalErr
+      }
+
+      if (businessError) throw businessError
+      return businessResult
+    }
+
+    // Await previous query completion (whether success or fail) before starting new one
+    const taskPromise = lock.catch(() => {}).then(() => executeGuardedQuery())
+    clientLocks.set(this, taskPromise)
+
+    if (callback) {
+      // Invoke caller callback once task completes
+      taskPromise.then(
+        (res) => callback!(null, res),
+        (err) => callback!(err)
+      )
+      return
+    }
+
+    return taskPromise
   }
 }

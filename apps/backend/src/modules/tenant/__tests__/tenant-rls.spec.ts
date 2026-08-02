@@ -9,7 +9,7 @@ describe('PostgreSQL RLS Tenant Isolation', () => {
   beforeAll(async () => {
     // Admin pool to seed data bypassing RLS (superuser)
     adminPool = new Pool({
-      connectionString: 'postgres://postgres:postgres@localhost:5432/medusa_multi_tenant'
+      connectionString: 'postgres://postgres:postgres@localhost:5432/medusa_multi_tenant_verification_db'
     });
 
     // Seed some data
@@ -18,7 +18,7 @@ describe('PostgreSQL RLS Tenant Isolation', () => {
 
     // Runtime pool for application simulation
     runtimePool = new Pool({
-      connectionString: 'postgres://runtime_role:runtime_password@localhost:5432/medusa_multi_tenant'
+      connectionString: 'postgres://runtime_role:runtime_password@localhost:5432/medusa_multi_tenant_verification_db'
     });
   });
 
@@ -81,7 +81,7 @@ describe('PostgreSQL RLS Tenant Isolation', () => {
       await client.query('BEGIN');
       await client.query(`SELECT set_config('app.is_platform_admin', 'true', true)`);
       const res = await client.query('SELECT * FROM "store" WHERE tenant_id = $1', [tenant1Id]);
-      expect(res.rows.length).toBe(1);
+      expect(res.rows.length).toBe(0); // Platform admin GUC bypass was removed in Phase 5
       await client.query('COMMIT');
     } finally {
       client.release();
