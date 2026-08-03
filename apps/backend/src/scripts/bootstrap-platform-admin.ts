@@ -1,9 +1,12 @@
 import { MedusaContainer } from "@medusajs/framework/types"
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules, MedusaError } from "@medusajs/framework/utils"
 import { TENANT_MODULE } from "../modules/tenant"
 import { createTenantWorkflow } from "../workflows/tenant/create-tenant"
 import { createTenantStoreWorkflow } from "../workflows/tenant/create-tenant-store"
 import { tenantContext } from "../utils/tenant-context"
+import { installRlsPgHook } from "../utils/rls-pg-hook"
+
+installRlsPgHook()
 
 export default async function bootstrapPlatformAdminScript({
   container,
@@ -30,14 +33,13 @@ export default async function bootstrapPlatformAdminScript({
 
   try {
     // 1. Find User by Email
-    let authIdentities = await authModule.listAuthIdentities({ provider: "emailpass" })
+    let authIdentities = await authModule.listAuthIdentities({} as any, { relations: ["provider_identities"] })
     let auth = authIdentities.find(a => 
-      (a.provider_metadata?.email as string) === platformEmail || 
-      a.provider_identities.some(i => i.entity_id === platformEmail)
+      a.provider_identities?.some((i: any) => i.entity_id === platformEmail)
     )
 
     if (!auth || !auth.app_metadata?.user_id) {
-      throw new Error(`User with email ${platformEmail} not found or has no user_id. Please register the user first.`)
+      throw new MedusaError(MedusaError.Types.NOT_FOUND, `User with email ${platformEmail} not found or has no user_id. Please register the user first.`)
     }
 
     const actorId = auth.app_metadata.user_id as string
@@ -46,9 +48,11 @@ export default async function bootstrapPlatformAdminScript({
     // 2. Ensure PlatformMembership
     const pMemberships = await tenantModule.listPlatformMemberships({ actor_id: actorId })
     if (pMemberships.length === 0) {
-      await tenantModule.createPlatformMemberships({
-        actor_id: actorId,
-        is_active: true
+      await tenantContext.run({ accessMode: "platform" }, async () => {
+        await tenantModule.createPlatformMemberships({
+          actor_id: actorId,
+          is_active: true
+        })
       })
       logger.info(`Created PlatformMembership for ${actorId}`)
     } else {
@@ -75,10 +79,12 @@ export default async function bootstrapPlatformAdminScript({
       // Ensure TenantMembership exists
       const tMemberships = await tenantModule.listTenantMemberships({ tenant_id: tenant.id, actor_id: actorId })
       if (tMemberships.length === 0) {
-        await tenantModule.createTenantMemberships({
-          tenant_id: tenant.id,
-          actor_id: actorId,
-          is_active: true
+        await tenantContext.run({ tenantId: tenant.id, accessMode: "tenant" }, async () => {
+          await tenantModule.createTenantMemberships({
+            tenant_id: tenant.id,
+            actor_id: actorId,
+            is_active: true
+          })
         })
       }
     }

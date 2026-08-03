@@ -73,7 +73,7 @@ export default async function seedUatScript({
     }
 
     // 4. Ensure linked
-    if (auth.app_metadata?.user_id !== user.id) {
+    if (auth && auth.app_metadata?.user_id !== user.id) {
       logger.info(`Linking AuthIdentity ${auth.id} to User ${user.id}`)
       await authModule.updateAuthIdentities({
         id: auth.id,
