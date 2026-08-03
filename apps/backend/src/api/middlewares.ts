@@ -1,5 +1,6 @@
 import { defineMiddlewares } from "@medusajs/framework/http"
 import { tenantResolutionMiddleware } from "./middlewares/tenant-resolution"
+import { blockTenantMutations, validateProductCreatePayload } from "./middlewares/tenant-resource-isolation"
 
 // Verify the multi-tenant framework patch is active
 try {
@@ -24,6 +25,43 @@ export default defineMiddlewares({
     {
       matcher: "/store/*",
       middlewares: [tenantResolutionMiddleware],
+    },
+    {
+      matcher: "/admin/products",
+      method: "POST",
+      middlewares: [validateProductCreatePayload],
+    },
+    {
+      matcher: "/admin/sales-channels*",
+      middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/regions*",
+      middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/shipping-profiles*",
+      middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/product-types*",
+      middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/product-categories*",
+      middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/product-tags*",
+      middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/product-collections*",
+      middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/tax-regions*",
+      middlewares: [blockTenantMutations],
     }
   ],
 })

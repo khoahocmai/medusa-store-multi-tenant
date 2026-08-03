@@ -9,6 +9,7 @@ import { createSalesChannelsWorkflow } from "@medusajs/core-flows"
 import { createRemoteLinkStep } from "@medusajs/core-flows"
 import { Modules } from "@medusajs/framework/utils"
 import { TENANT_MODULE } from "../../modules/tenant"
+import { createStoreWithContextStep } from "./steps/create-store-with-context"
 
 type CreateTenantStoreWorkflowInput = {
   tenant_id: string
@@ -42,21 +43,8 @@ export const createTenantStoreWorkflow = createWorkflow(
     })
 
     // 4. Create Provisioning if necessary
-    const provisioningResult = when(existing, (e) => e.proceed).then(() => {
-      // 4.a Create Store
-      const stores = createStoresWorkflow.runAsStep({
-        input: {
-          stores: [
-            {
-              name: validatedInput.store_name,
-              supported_currencies: validatedInput.supported_currencies,
-            },
-          ],
-        },
-      })
-      const storeId = transform({ stores }, ({ stores }) => stores[0].id)
-
-      // 4.b Create Default Sales Channel
+    const provisioningResult = when("check-provisioning-needed", existing, (e) => e.proceed).then(() => {
+      // 4.a Create Default Sales Channel
       const salesChannels = createSalesChannelsWorkflow.runAsStep({
         input: {
           salesChannelsData: [
@@ -69,6 +57,15 @@ export const createTenantStoreWorkflow = createWorkflow(
         },
       })
       const salesChannelId = transform({ salesChannels }, ({ salesChannels }) => salesChannels[0].id)
+
+      // 4.b Create Store with Context and default_sales_channel_id
+      const store = createStoreWithContextStep({
+        tenant_id: input.tenant_id,
+        name: validatedInput.store_name,
+        supported_currencies: validatedInput.supported_currencies,
+        default_sales_channel_id: salesChannelId
+      })
+      const storeId = transform({ store }, ({ store }) => store.id)
 
       // 4.c Link Tenant -> Store
       const storeLinkData = transform({ tenantId: input.tenant_id, storeId }, (data) => [
