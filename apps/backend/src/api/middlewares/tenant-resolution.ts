@@ -22,25 +22,6 @@ export const tenantResolutionMiddleware = async (
     return next()
   }
 
-  // Explicit route allow/block matrix enforcement
-  const blockedPrefixes = [
-    "/admin/users",
-    "/admin/pricing",
-    "/admin/price-lists",
-    "/admin/inventory-items",
-    "/admin/promotions",
-    "/admin/campaigns",
-    "/admin/api-keys",
-    "/store/carts",
-    "/store/payment"
-  ]
-
-  if (blockedPrefixes.some(prefix => cleanPath.startsWith(prefix))) {
-    throw new MedusaError(
-      MedusaError.Types.NOT_ALLOWED,
-      "Route temporarily blocked pending tenant isolation (Multi-Tenant MVP)"
-    )
-  }
 
   const tenantModule: any = req.scope.resolve(TENANT_MODULE)
 

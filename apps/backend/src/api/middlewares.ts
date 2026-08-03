@@ -62,6 +62,18 @@ export default defineMiddlewares({
     {
       matcher: "/admin/tax-regions*",
       middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/users*",
+      middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/pricing*",
+      middlewares: [blockTenantMutations],
+    },
+    {
+      matcher: "/admin/price-lists*",
+      middlewares: [blockTenantMutations],
     }
   ],
 })
