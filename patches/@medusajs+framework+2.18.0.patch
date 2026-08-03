@@ -1,0 +1,23 @@
+diff --git a/node_modules/@medusajs/framework/dist/http/utils/wrap-handler.js b/node_modules/@medusajs/framework/dist/http/utils/wrap-handler.js
+index 9de254c..79b6b90 100644
+--- a/node_modules/@medusajs/framework/dist/http/utils/wrap-handler.js
++++ b/node_modules/@medusajs/framework/dist/http/utils/wrap-handler.js
+@@ -11,6 +11,18 @@ const wrapHandler = (fn) => {
+             });
+         }
+         try {
++            if (req.scope && typeof req.scope.resolve === "function" && req.path && !req.path.includes("/auth/")) {
++                let executeInTenantTransaction;
++                const path = require("path");
++                try {
++                    executeInTenantTransaction = require(path.join(process.cwd(), "dist/utils/patch-helper")).executeInTenantTransaction;
++                } catch (e) {
++                    executeInTenantTransaction = require(path.join(process.cwd(), "src/utils/patch-helper")).executeInTenantTransaction;
++                }
++                if (executeInTenantTransaction) {
++                    return await executeInTenantTransaction(req, res, next, fn);
++                }
++            }
+             return await fn(req, res, next);
+         }
+         catch (err) {

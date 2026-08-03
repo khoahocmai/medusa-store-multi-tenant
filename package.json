@@ -23,11 +23,12 @@
   },
   "devDependencies": {
     "@medusajs/eslint-plugin": "2.18.0",
+    "ajv": "^8.13.0",
     "eslint": "^9.39.4",
     "jiti": "^2.7.0",
+    "patch-package": "^8.0.1",
     "prettier": "^3.2.5",
-    "turbo": "^2.0.14",
-    "ajv": "^8.13.0"
+    "turbo": "^2.0.14"
   },
   "workspaces": [
     "apps/**",

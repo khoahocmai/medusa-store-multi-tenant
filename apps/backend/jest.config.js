@@ -15,6 +15,9 @@ module.exports = {
   testEnvironment: "node",
   moduleFileExtensions: ["js", "ts", "json"],
   modulePathIgnorePatterns: ["dist/", "<rootDir>/.medusa/"],
+  moduleNameMapper: {
+    "^@medusajs/framework/dist/http/utils/wrap-handler$": "<rootDir>/../../node_modules/@medusajs/framework/dist/http/utils/wrap-handler.js"
+  },
   setupFiles: ["./integration-tests/setup.js"],
 };
 
