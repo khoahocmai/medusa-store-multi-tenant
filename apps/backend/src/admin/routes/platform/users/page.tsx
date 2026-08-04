@@ -14,9 +14,10 @@ import {
   Badge
 } from "@medusajs/ui"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { RestrictedAccessView } from "../../../components/restricted-access-view"
 
 export const config = defineRouteConfig({
-  label: "Users (Platform)",
+  label: "Platform Users",
   icon: UsersSolid,
 })
 
@@ -66,12 +67,14 @@ const PlatformUsersPage = () => {
 
   const { data: usersData, isLoading: usersLoading, error: usersError } = useQuery({
     queryKey: ["platform_users"],
-    queryFn: fetchUsers
+    queryFn: fetchUsers,
+    retry: false
   })
 
   const { data: tenantsData, isLoading: tenantsLoading } = useQuery({
     queryKey: ["platform_tenants"],
-    queryFn: fetchTenants
+    queryFn: fetchTenants,
+    enabled: !usersError
   })
 
   const mutation = useMutation({
@@ -102,6 +105,11 @@ const PlatformUsersPage = () => {
 
   const handleSelectChange = (name: string, value: string) => {
     setFormData({ ...formData, [name]: value })
+  }
+
+  // EARLY RETURN: Prevent rendering Header/Drawer if there's an error
+  if (usersError) {
+    return <RestrictedAccessView />
   }
 
   return (
@@ -198,56 +206,51 @@ const PlatformUsersPage = () => {
         </Drawer>
       </div>
 
-      {usersError ? (
-        <div className="text-ui-fg-error">
-          Failed to load users. Ensure you have platform admin privileges.
-        </div>
-      ) : (
-        <Table>
-          <Table.Header>
+      <Table>
+        <Table.Header>
+          <Table.Row>
+            <Table.HeaderCell>Email</Table.HeaderCell>
+            <Table.HeaderCell>Name</Table.HeaderCell>
+            <Table.HeaderCell>Tenant (Cửa hàng)</Table.HeaderCell>
+            <Table.HeaderCell>Role</Table.HeaderCell>
+            <Table.HeaderCell>Created At</Table.HeaderCell>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {usersLoading ? (
             <Table.Row>
-              <Table.HeaderCell>Email</Table.HeaderCell>
-              <Table.HeaderCell>Name</Table.HeaderCell>
-              <Table.HeaderCell>Tenant (Cửa hàng)</Table.HeaderCell>
-              <Table.HeaderCell>Role</Table.HeaderCell>
-              <Table.HeaderCell>Created At</Table.HeaderCell>
+              <Table.Cell colSpan={5} className="text-center py-4">Loading...</Table.Cell>
             </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {usersLoading ? (
-              <Table.Row>
-                <Table.Cell colSpan={5} className="text-center py-4">Loading...</Table.Cell>
+          ) : usersData?.users?.length === 0 ? (
+            <Table.Row>
+              <Table.Cell colSpan={5} className="text-center py-4">No users found</Table.Cell>
+            </Table.Row>
+          ) : (
+            usersData?.users?.map((user: any) => (
+              <Table.Row key={user.id}>
+                <Table.Cell className="font-medium">{user.email}</Table.Cell>
+                <Table.Cell>{[user.first_name, user.last_name].filter(Boolean).join(" ") || "-"}</Table.Cell>
+                <Table.Cell>
+                  {user.is_platform ? (
+                    <Badge color="purple">Platform</Badge>
+                  ) : (
+                    <span className="font-semibold text-ui-fg-base">{user.tenant_name || user.tenant_id}</span>
+                  )}
+                </Table.Cell>
+                <Table.Cell>
+                  {user.is_platform ? "-" : (
+                    <Badge color="blue">{user.tenant_role}</Badge>
+                  )}
+                </Table.Cell>
+                <Table.Cell>{new Date(user.created_at).toLocaleDateString()}</Table.Cell>
               </Table.Row>
-            ) : usersData?.users?.length === 0 ? (
-              <Table.Row>
-                <Table.Cell colSpan={5} className="text-center py-4">No users found</Table.Cell>
-              </Table.Row>
-            ) : (
-              usersData?.users?.map((user: any) => (
-                <Table.Row key={user.id}>
-                  <Table.Cell className="font-medium">{user.email}</Table.Cell>
-                  <Table.Cell>{[user.first_name, user.last_name].filter(Boolean).join(" ") || "-"}</Table.Cell>
-                  <Table.Cell>
-                    {user.is_platform ? (
-                      <Badge color="purple">Platform</Badge>
-                    ) : (
-                      <span className="font-semibold text-ui-fg-base">{user.tenant_name || user.tenant_id}</span>
-                    )}
-                  </Table.Cell>
-                  <Table.Cell>
-                    {user.is_platform ? "-" : (
-                      <Badge color="blue">{user.tenant_role}</Badge>
-                    )}
-                  </Table.Cell>
-                  <Table.Cell>{new Date(user.created_at).toLocaleDateString()}</Table.Cell>
-                </Table.Row>
-              ))
-            )}
-          </Table.Body>
-        </Table>
-      )}
+            ))
+          )}
+        </Table.Body>
+      </Table>
     </Container>
   )
 }
 
 export default PlatformUsersPage
+

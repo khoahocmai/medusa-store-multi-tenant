@@ -13,6 +13,7 @@ import {
   toast
 } from "@medusajs/ui"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { RestrictedAccessView } from "../../components/restricted-access-view"
 
 export const config = defineRouteConfig({
   label: "Tenants",
@@ -56,7 +57,8 @@ const TenantsPage = () => {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["platform_tenants"],
-    queryFn: fetchTenants
+    queryFn: fetchTenants,
+    retry: false
   })
 
   const mutation = useMutation({
@@ -79,6 +81,11 @@ const TenantsPage = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
+  }
+
+  // EARLY RETURN: Prevent rendering Header/Drawer if there's an error
+  if (error) {
+    return <RestrictedAccessView />
   }
 
   return (
@@ -154,48 +161,42 @@ const TenantsPage = () => {
         </Drawer>
       </div>
 
-      {error ? (
-        <div className="text-ui-fg-error">
-          Failed to load tenants. Ensure you have platform admin privileges.
-        </div>
-      ) : (
-        <Table>
-          <Table.Header>
+      <Table>
+        <Table.Header>
+          <Table.Row>
+            <Table.HeaderCell>Name</Table.HeaderCell>
+            <Table.HeaderCell>Handle</Table.HeaderCell>
+            <Table.HeaderCell>Status</Table.HeaderCell>
+            <Table.HeaderCell>Members</Table.HeaderCell>
+            <Table.HeaderCell>Stores</Table.HeaderCell>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {isLoading ? (
             <Table.Row>
-              <Table.HeaderCell>Name</Table.HeaderCell>
-              <Table.HeaderCell>Handle</Table.HeaderCell>
-              <Table.HeaderCell>Status</Table.HeaderCell>
-              <Table.HeaderCell>Members</Table.HeaderCell>
-              <Table.HeaderCell>Stores</Table.HeaderCell>
+              <Table.Cell colSpan={5} className="text-center py-4">Loading...</Table.Cell>
             </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {isLoading ? (
-              <Table.Row>
-                <Table.Cell colSpan={5} className="text-center py-4">Loading...</Table.Cell>
+          ) : data?.tenants?.length === 0 ? (
+            <Table.Row>
+              <Table.Cell colSpan={5} className="text-center py-4">No tenants found</Table.Cell>
+            </Table.Row>
+          ) : (
+            data?.tenants?.map((tenant: any) => (
+              <Table.Row key={tenant.id}>
+                <Table.Cell className="font-medium">{tenant.name}</Table.Cell>
+                <Table.Cell>{tenant.handle}</Table.Cell>
+                <Table.Cell>
+                  <Badge color={tenant.status === 'active' ? 'green' : 'grey'}>
+                    {tenant.status}
+                  </Badge>
+                </Table.Cell>
+                <Table.Cell>{tenant.memberships?.length || 0}</Table.Cell>
+                <Table.Cell>{tenant.store_locators?.length || 0}</Table.Cell>
               </Table.Row>
-            ) : data?.tenants?.length === 0 ? (
-              <Table.Row>
-                <Table.Cell colSpan={5} className="text-center py-4">No tenants found</Table.Cell>
-              </Table.Row>
-            ) : (
-              data?.tenants?.map((tenant: any) => (
-                <Table.Row key={tenant.id}>
-                  <Table.Cell className="font-medium">{tenant.name}</Table.Cell>
-                  <Table.Cell>{tenant.handle}</Table.Cell>
-                  <Table.Cell>
-                    <Badge color={tenant.status === 'active' ? 'green' : 'grey'}>
-                      {tenant.status}
-                    </Badge>
-                  </Table.Cell>
-                  <Table.Cell>{tenant.memberships?.length || 0}</Table.Cell>
-                  <Table.Cell>{tenant.store_locators?.length || 0}</Table.Cell>
-                </Table.Row>
-              ))
-            )}
-          </Table.Body>
-        </Table>
-      )}
+            ))
+          )}
+        </Table.Body>
+      </Table>
     </Container>
   )
 }
