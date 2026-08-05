@@ -14,12 +14,27 @@ export const blockTenantMutations = async (
     return next()
   }
 
+  const authContext = (req as any).auth_context || (req as any).authContext
+
+  // Allow the current user to edit their own profile
+  if (req.method === "POST" && req.originalUrl) {
+    const actorId = authContext?.actor_id
+    
+    // Support both /admin/users/me and /admin/users/<actorId>
+    const isProfileUpdate = req.originalUrl.match(/\/admin\/users\/me\/?$/) || 
+                            (actorId && req.originalUrl.match(new RegExp(`\/admin\/users\/${actorId}\/?$`)))
+    
+    if (isProfileUpdate) {
+      return next()
+    }
+  }
+
   // Only allow GET requests. Mutations (POST/PUT/DELETE) are blocked.
   if (req.method !== "GET" && req.method !== "OPTIONS") {
-    throw new MedusaError(
-      MedusaError.Types.NOT_ALLOWED,
-      "Mutations (POST/PUT/DELETE) on shared or unisolated resources are blocked for tenants."
-    )
+    return res.status(403).json({
+      type: "not_allowed",
+      message: "You do not have permission to edit other users or shared resources."
+    })
   }
 
   return next()
@@ -39,7 +54,7 @@ export const validateProductCreatePayload = async (
 
   const tenantId = ctx?.tenantId
   if (!tenantId) {
-    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Missing tenant context.")
+    return next(new MedusaError(MedusaError.Types.NOT_ALLOWED, "Missing tenant context."))
   }
 
   const body = req.body as any
@@ -62,10 +77,10 @@ export const validateProductCreatePayload = async (
       })
 
       if (allowedChannels.length !== scIds.length) {
-        throw new MedusaError(
+        return next(new MedusaError(
           MedusaError.Types.NOT_ALLOWED,
           "Invalid payload: One or more sales channels do not belong to the current tenant."
-        )
+        ))
       }
     }
   }

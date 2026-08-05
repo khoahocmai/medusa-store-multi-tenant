@@ -73,7 +73,7 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ) {
-  const { email, first_name, last_name, tenant_id, role } = req.body as any
+  const { email, password, first_name, last_name, tenant_id, role } = req.body as any
 
   if (!email || !tenant_id) {
     throw new MedusaError(MedusaError.Types.INVALID_DATA, "email and tenant_id are required")
@@ -82,6 +82,7 @@ export async function POST(
   const { result } = await createTenantUserWorkflow(req.scope).run({
     input: {
       email,
+      password,
       first_name,
       last_name,
       tenant_id,
