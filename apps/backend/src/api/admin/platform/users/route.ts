@@ -12,8 +12,20 @@ export async function GET(
 
   const limit = req.queryConfig?.pagination?.take ?? 20
   const offset = req.queryConfig?.pagination?.skip ?? 0
+  const tenantId = req.query.tenant_id as string
 
-  const [users, count] = await userModule.listAndCountUsers({}, { skip: offset, take: limit })
+  let userFilters: any = {}
+
+  if (tenantId) {
+    const memberships = await tenantModule.listTenantMemberships({ tenant_id: tenantId })
+    if (memberships.length === 0) {
+      return res.json({ users: [], count: 0, limit, offset })
+    }
+    const userIds = memberships.map((m: any) => m.actor_id)
+    userFilters.id = userIds
+  }
+
+  const [users, count] = await userModule.listAndCountUsers(userFilters, { skip: offset, take: limit })
 
   if (users.length === 0) {
     return res.json({ users: [], count, limit, offset })

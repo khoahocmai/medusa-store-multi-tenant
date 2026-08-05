@@ -2,8 +2,10 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/
 import { validatePlatformAdmin, logPlatformAdminAudit } from "../../../../utils/platform-auth"
 import { MedusaError } from "@medusajs/framework/utils"
 import { createTenantWorkflow } from "../../../../workflows/tenant/create-tenant"
+import { createTenantStoreWorkflow } from "../../../../workflows/tenant/create-tenant-store"
+import { tenantContext } from "../../../../utils/tenant-context"
 
-import { Modules } from "@medusajs/framework/utils"
+import { Modules, ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 export const POST = async (
   req: AuthenticatedMedusaRequest,
@@ -69,6 +71,22 @@ export const POST = async (
       authenticated_actor_id: actorId,
     },
   })
+
+  try {
+    await tenantContext.run({ tenantId: tenant.id, accessMode: "tenant" }, async () => {
+      await createTenantStoreWorkflow(req.scope).run({
+        input: {
+          tenant_id: tenant.id,
+          authenticated_actor_id: initial_admin_actor_id,
+          store_name: name,
+          domain: `${handle}.localhost`,
+        },
+      })
+    })
+  } catch (error: any) {
+    const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER)
+    logger.error(`Failed to provision default store for tenant ${tenant.id}: ${error.message}`, error)
+  }
 
   logPlatformAdminAudit(req.scope, "CREATE", actorId, initial_admin_actor_id, {
     tenant_id: tenant.id,
