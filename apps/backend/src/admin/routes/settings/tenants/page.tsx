@@ -1,19 +1,20 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { BuildingsSolid } from "@medusajs/icons"
-import { useState } from "react"
-import { 
-  Container, 
-  Heading, 
-  Table, 
-  Button, 
-  Drawer, 
-  Input, 
-  Label,
+import {
   Badge,
+  Button,
+  Container,
+  Drawer,
+  Heading,
+  Input,
+  Label,
+  Table,
+  Text,
   toast
 } from "@medusajs/ui"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { RestrictedAccessView } from "../../components/restricted-access-view"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
+import { Link } from "react-router-dom"
 
 export const config = defineRouteConfig({
   label: "Tenants",
@@ -23,6 +24,11 @@ export const config = defineRouteConfig({
 const fetchTenants = async () => {
   const res = await fetch("/admin/platform/tenants")
   if (!res.ok) {
+    if (res.status === 401) {
+      window.location.href = "/app/login"
+      return
+    }
+    if (res.status === 403) throw new Error("403_FORBIDDEN")
     throw new Error("Failed to fetch tenants")
   }
   return res.json()
@@ -36,7 +42,7 @@ const createTenant = async (data: any) => {
     },
     body: JSON.stringify(data)
   })
-  
+
   if (!res.ok) {
     const errorData = await res.json()
     throw new Error(errorData.message || "Failed to create tenant")
@@ -52,7 +58,7 @@ const TenantsPage = () => {
     admin_email: "",
     admin_password: ""
   })
-  
+
   const queryClient = useQueryClient()
 
   const { data, isLoading, error } = useQuery({
@@ -83,9 +89,14 @@ const TenantsPage = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
-  // EARLY RETURN: Prevent rendering Header/Drawer if there's an error
+  // ROUTE GUARD: Render Access Restricted UI if unauthorized
   if (error) {
-    return <RestrictedAccessView />
+    return (
+      <Container className="p-8 flex flex-col items-center justify-center gap-4">
+        <Heading level="h1">Access Restricted</Heading>
+        <Text>You do not have platform admin privileges to view this page.</Text>
+      </Container>
+    )
   }
 
   return (
@@ -104,45 +115,45 @@ const TenantsPage = () => {
               <form id="create-tenant-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="name">Tenant Name</Label>
-                  <Input 
-                    id="name" 
-                    name="name" 
-                    placeholder="Acme Corp" 
-                    required 
+                  <Input
+                    id="name"
+                    name="name"
+                    placeholder="Acme Corp"
+                    required
                     value={formData.name}
                     onChange={handleChange}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="handle">Handle (Domain slug)</Label>
-                  <Input 
-                    id="handle" 
-                    name="handle" 
-                    placeholder="acme-corp" 
-                    required 
+                  <Input
+                    id="handle"
+                    name="handle"
+                    placeholder="acme-corp"
+                    required
                     value={formData.handle}
                     onChange={handleChange}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="admin_email">Initial Admin Email</Label>
-                  <Input 
-                    id="admin_email" 
-                    name="admin_email" 
-                    type="email" 
-                    placeholder="admin@acme.com" 
-                    required 
+                  <Input
+                    id="admin_email"
+                    name="admin_email"
+                    type="email"
+                    placeholder="admin@acme.com"
+                    required
                     value={formData.admin_email}
                     onChange={handleChange}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="admin_password">Initial Admin Password</Label>
-                  <Input 
-                    id="admin_password" 
-                    name="admin_password" 
-                    type="password" 
-                    required 
+                  <Input
+                    id="admin_password"
+                    name="admin_password"
+                    type="password"
+                    required
                     value={formData.admin_password}
                     onChange={handleChange}
                   />
@@ -169,6 +180,7 @@ const TenantsPage = () => {
             <Table.HeaderCell>Status</Table.HeaderCell>
             <Table.HeaderCell>Members</Table.HeaderCell>
             <Table.HeaderCell>Stores</Table.HeaderCell>
+            <Table.HeaderCell className="text-right">Actions</Table.HeaderCell>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -178,7 +190,7 @@ const TenantsPage = () => {
             </Table.Row>
           ) : data?.tenants?.length === 0 ? (
             <Table.Row>
-              <Table.Cell colSpan={5} className="text-center py-4">No tenants found</Table.Cell>
+              <Table.Cell colSpan={6} className="text-center py-4">No tenants found</Table.Cell>
             </Table.Row>
           ) : (
             data?.tenants?.map((tenant: any) => (
@@ -192,6 +204,11 @@ const TenantsPage = () => {
                 </Table.Cell>
                 <Table.Cell>{tenant.memberships?.length || 0}</Table.Cell>
                 <Table.Cell>{tenant.store_locators?.length || 0}</Table.Cell>
+                <Table.Cell className="text-right">
+                  <Link to={`/settings/tenants/${tenant.id}`} className="text-ui-fg-interactive hover:text-ui-fg-interactive-hover font-medium">
+                    View Details
+                  </Link>
+                </Table.Cell>
               </Table.Row>
             ))
           )}
