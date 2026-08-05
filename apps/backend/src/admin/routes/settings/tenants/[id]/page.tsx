@@ -58,6 +58,7 @@ const TenantDetailPage = () => {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [formData, setFormData] = useState({
     email: "",
+    password: "",
     first_name: "",
     last_name: "",
     role: "member"
@@ -84,7 +85,7 @@ const TenantDetailPage = () => {
       toast.success("User created successfully")
       queryClient.invalidateQueries({ queryKey: ["platform_tenant_members", id] })
       setDrawerOpen(false)
-      setFormData({ email: "", first_name: "", last_name: "", role: "member" })
+      setFormData({ email: "", password: "", first_name: "", last_name: "", role: "member" })
     },
     onError: (err: any) => {
       toast.error(err.message)
@@ -173,6 +174,17 @@ const TenantDetailPage = () => {
                       placeholder="user@example.com"
                       required
                       value={formData.email}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="password">Password <span className="text-ui-fg-error">*</span></Label>
+                    <Input
+                      id="password"
+                      name="password"
+                      type="password"
+                      required
+                      value={formData.password}
                       onChange={handleChange}
                     />
                   </div>
