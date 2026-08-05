@@ -19,10 +19,10 @@ export default async function bootstrapPlatformAdminScript({
   const tenantModule = container.resolve(TENANT_MODULE) as any
 
   const platformEmail = process.env.PLATFORM_ADMIN_EMAIL
-  const tenantName = process.env.DEFAULT_TENANT_NAME || "Platform Default Tenant"
-  const tenantHandle = process.env.DEFAULT_TENANT_HANDLE || "platform-default"
-  const storeName = process.env.DEFAULT_STORE_NAME || "Platform Default Store"
-  const storeDomain = process.env.DEFAULT_STORE_DOMAIN || "platform.local"
+  const tenantName = process.env.DEFAULT_TENANT_NAME || "Default Tenant"
+  const tenantHandle = process.env.DEFAULT_TENANT_HANDLE || "default-tenant"
+  const storeName = process.env.DEFAULT_STORE_NAME || "Default Store"
+  const storeDomain = process.env.DEFAULT_STORE_DOMAIN || "store.local"
 
   if (!platformEmail) {
     logger.error("PLATFORM_ADMIN_EMAIL is required")
@@ -34,7 +34,7 @@ export default async function bootstrapPlatformAdminScript({
   try {
     // 1. Find User by Email
     let authIdentities = await authModule.listAuthIdentities({} as any, { relations: ["provider_identities"] })
-    let auth = authIdentities.find(a => 
+    let auth = authIdentities.find(a =>
       a.provider_identities?.some((i: any) => i.entity_id === platformEmail)
     )
 
