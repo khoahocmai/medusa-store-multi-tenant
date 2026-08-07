@@ -3,20 +3,39 @@ import { tenantContext } from "../../utils/tenant-context"
 import { TENANT_MODULE } from "../../modules/tenant"
 import { MedusaError } from "@medusajs/framework/utils"
 
-
 export const tenantResolutionMiddleware = async (
   req: MedusaRequest,
   res: MedusaResponse,
   next: MedusaNextFunction
 ) => {
   const path = (req as any).originalUrl || req.path || (req as any).url
-
   const cleanPath = path.split('?')[0].replace(/\/$/, "")
 
-  // Allowlist Bootstrap Routes specifically
-  if (cleanPath === "/admin/users/me") {
+  // 1. Handle explicit login/logout to clear active workspace cookie
+  if (cleanPath === "/admin/auth/session") {
+    if (req.method === "DELETE" || req.method === "POST") {
+      // Use standard generic set-cookie for deletion (expired)
+      res.setHeader(
+        "Set-Cookie", 
+        "medusa_active_workspace=; Path=/admin; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+      )
+    }
+  }
+
+  // 2. Allowlist Bootstrap/Global Routes that do not require workspace isolation
+  const globalRoutes = [
+    "/admin/users/me",
+    "/admin/auth",
+    "/admin/auth/session",
+    "/admin/tenant/current",
+    "/admin/tenant/available",
+    "/admin/tenant/workspace"
+  ]
+
+  const isGlobalRoute = globalRoutes.some(r => cleanPath.startsWith(r))
+  if (isGlobalRoute) {
     const actorId = (req as any).auth_context?.actor_id
-    if (!actorId) {
+    if (!actorId && cleanPath !== "/admin/auth/session" && !cleanPath.startsWith("/admin/auth")) {
       throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Missing authentication")
     }
     return next()
@@ -25,99 +44,102 @@ export const tenantResolutionMiddleware = async (
   const tenantModule: any = req.scope.resolve(TENANT_MODULE)
 
   if (cleanPath.startsWith("/admin")) {
-    const tenantId = req.headers["x-tenant-id"] as string
-
-    // 1. Resolve Actor ID from Medusa Auth Context ONLY
+    // 3. Resolve Actor ID
     const actorId = (req as any).auth_context?.actor_id
-    
     if (!actorId) {
       throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Missing authentication")
+    }
+
+    // 4. Resolve Candidate Workspace
+    const headerWorkspace = req.headers["x-tenant-id"] as string
+    const cookieStr = (req.headers.cookie as string) || ""
+    const match = cookieStr.match(/medusa_active_workspace=([^;]+)/)
+    const cookieWorkspace = match ? decodeURIComponent(match[1]) : null
+
+    const candidateTenantId = headerWorkspace ?? cookieWorkspace
+
+    // Guard against sentinel injection
+    if (candidateTenantId === "__workspace_unselected__") {
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, "Synthetic sentinel crossed frontend boundary")
     }
 
     let contextData: any = { tenantId: null, accessMode: null }
 
     if (cleanPath.startsWith("/admin/platform")) {
       // Platform routes: Strict platform-admin verification
-      const pMemberships = await tenantModule.listPlatformMemberships({ is_active: true })
-      const hasPlatformMembership = pMemberships.some((m: any) => m.actor_id === actorId)
-      if (!hasPlatformMembership) {
+      const pMemberships = await tenantModule.listPlatformMemberships({ actor_id: actorId, is_active: true })
+      if (pMemberships.length === 0) {
         throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Not a platform admin")
       }
       contextData = { tenantId: null, accessMode: "platform" }
     } else {
-      // Tenant routes: Strict tenant-membership verification
-      if (!tenantId) {
-        const tMemberships = await tenantModule.listTenantMemberships({ actor_id: actorId, is_active: true })
-        
-        if (tMemberships.length === 0) {
-          // If no tenant memberships, check if platform admin and accessing a global/mixed route
-          if (cleanPath.startsWith("/admin/users") || cleanPath.startsWith("/admin/invites")) {
-            const pMemberships = await tenantModule.listPlatformMemberships({ actor_id: actorId, is_active: true })
-            if (pMemberships.length > 0) {
-              contextData = { tenantId: null, accessMode: "platform" }
-              return tenantContext.run(contextData, next)
-            }
-          }
-          throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Not a member of any tenant")
-        }
-
-        const uniqueTenantIds = [...new Set(tMemberships.map((m: any) => m.tenant_id))] as string[]
-        const tenants = await tenantModule.listTenants({ id: uniqueTenantIds, status: "active" })
-        
-        if (tenants.length === 0) {
-          throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Not a member of any active tenant")
-        }
-
-        if (tenants.length > 1) {
-          throw new MedusaError(MedusaError.Types.INVALID_DATA, "TENANT_SELECTION_REQUIRED")
-        }
-
-        contextData = { tenantId: tenants[0].id, accessMode: "tenant" }
-      } else {
-        const tMemberships = await tenantModule.listTenantMemberships({ tenant_id: tenantId, actor_id: actorId, is_active: true })
-        
-        let accessMode = "tenant"
-
-        if (tMemberships.length === 0) {
-          // Check if Platform Admin impersonation
-          const pMemberships = await tenantModule.listPlatformMemberships({ actor_id: actorId, is_active: true })
-          if (pMemberships.length > 0) {
-            accessMode = "platform_impersonation"
-            // Structured audit log
-            console.log(JSON.stringify({
-              type: "AUDIT_LOG",
-              action: "PLATFORM_IMPERSONATION",
-              actorId,
-              tenantId,
-              method: req.method,
-              path: cleanPath,
-              timestamp: new Date().toISOString()
-            }))
-          } else {
-            console.log("FAILED TENANT MEMBERSHIP", { tenantId, actorId, tMemberships, path: cleanPath })
-            throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Not a member of this tenant")
-          }
+      // Tenant-owned routes
+      if (!candidateTenantId) {
+        // No workspace selected. Check if we need to return the synthetic store shim.
+        if (cleanPath === "/admin/stores" && req.method === "GET") {
+          return res.json({
+            stores: [{
+              id: "__workspace_unselected__",
+              name: "No Workspace Selected",
+              supported_currencies: [],
+              default_sales_channel_id: null,
+            }],
+            count: 1,
+            offset: 0,
+            limit: 1
+          })
         }
         
-        const tenants = await tenantModule.listTenants({ id: [tenantId], status: "active" })
-        if (tenants.length === 0) {
-          throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Tenant is not active")
-        }
-
-        contextData = { tenantId, accessMode }
+        // Otherwise, do not allow access to tenant routes without a selected tenant
+        throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "No workspace selected")
       }
+
+      // Verify the candidate tenant
+      let accessMode = "tenant"
+      const tMemberships = await tenantModule.listTenantMemberships({ tenant_id: candidateTenantId, actor_id: actorId, is_active: true })
+      
+      if (tMemberships.length === 0) {
+        // Fallback: Check Platform Admin impersonation
+        const pMemberships = await tenantModule.listPlatformMemberships({ actor_id: actorId, is_active: true })
+        if (pMemberships.length > 0) {
+          accessMode = "platform_impersonation"
+          // Structured audit log
+          console.log(JSON.stringify({
+            type: "AUDIT_LOG",
+            action: "WORKSPACE_IMPERSONATION",
+            actorId,
+            tenantId: candidateTenantId,
+            method: req.method,
+            path: cleanPath,
+            timestamp: new Date().toISOString()
+          }))
+        } else {
+          console.log("FAILED TENANT AUTHORIZATION", { candidateTenantId, actorId, tMemberships, path: cleanPath })
+          throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Not a member of this workspace")
+        }
+      }
+      
+      const tenants = await tenantModule.listTenants({ id: [candidateTenantId], status: "active" })
+      if (tenants.length === 0) {
+        throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Workspace is not active")
+      }
+
+      contextData = { tenantId: candidateTenantId, accessMode }
     }
 
     return tenantContext.run(contextData, next)
   }
 
+  // Storefront logic remains unchanged
   if (path.startsWith("/store") || path.startsWith("/tenant")) {
-    // req.hostname respects Express 'trust proxy' setting and strips the port automatically.
     const normalizedHost = req.hostname || ""
-    const pubKey = req.headers["x-publishable-api-key"] as string
     const headerTenantId = req.headers["x-tenant-id"] as string
 
-    let tenantId = null
+    if (headerTenantId === "__workspace_unselected__") {
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, "Synthetic sentinel crossed frontend boundary")
+    }
+
+    let tenantId: string | null = null
     let storeIds: string[] = []
 
     if (headerTenantId) {
