@@ -6,9 +6,10 @@ import jwt from "jsonwebtoken"
 
 const DB_HOST = process.env.DB_HOST || "localhost"
 const TEST_DB_NAME = "medusa_multi_tenant_smoke_db"
-const TEST_DB_ADMIN_URL = `postgres://postgres:postgres@${DB_HOST}:5432/postgres`
-const MIGRATION_ROLE_URL = `postgres://postgres:postgres@${DB_HOST}:5432/${TEST_DB_NAME}`
-const RUNTIME_ROLE_URL = `postgres://runtime_role:runtime_password@${DB_HOST}:5432/${TEST_DB_NAME}`
+const DB_PORT = process.env.DB_PORT || 5432
+const TEST_DB_ADMIN_URL = `postgres://postgres:postgres@${DB_HOST}:${DB_PORT}/postgres`
+const MIGRATION_ROLE_URL = `postgres://postgres:postgres@${DB_HOST}:${DB_PORT}/${TEST_DB_NAME}`
+const RUNTIME_ROLE_URL = `postgres://runtime_role:runtime_password@${DB_HOST}:${DB_PORT}/${TEST_DB_NAME}`
 const PORT = 9009 
 
 jest.setTimeout(180000)
@@ -91,12 +92,23 @@ describe("UAT Multi-Tenant Smoke Tests", () => {
     })
 
     // 5. Seed basic data (Platform Admin, Tenant 1 & 2)
+    const t1Email = `t1admin_${Date.now()}@test.com`
+    const t2Email = `t2admin_${Date.now()}@test.com`
+    const userModuleService = container.resolve("user")
+    await userModuleService.createUsers([
+      { id: platformAdminId, email: `platform_${Date.now()}@test.com` },
+      { id: tenant1AdminId, email: t1Email },
+      { id: tenant2AdminId, email: t2Email }
+    ])
+
     const tenantModuleService = container.resolve("tenant")
     await tenantModuleService.createPlatformMemberships({ actor_id: platformAdminId, is_active: true })
     
     let res = await api.post("/admin/platform/tenants", {
       name: "Smoke Tenant 1",
       handle: "smoke-tenant-1",
+      admin_email: t1Email,
+      admin_password: "password",
       initial_admin_actor_id: tenant1AdminId
     }, { headers: getHeaders(platformAdminId) })
     tenant1 = res.data.tenant
@@ -104,6 +116,8 @@ describe("UAT Multi-Tenant Smoke Tests", () => {
     res = await api.post("/admin/platform/tenants", {
       name: "Smoke Tenant 2",
       handle: "smoke-tenant-2",
+      admin_email: t2Email,
+      admin_password: "password",
       initial_admin_actor_id: tenant2AdminId
     }, { headers: getHeaders(platformAdminId) })
     tenant2 = res.data.tenant
@@ -302,8 +316,8 @@ describe("UAT Multi-Tenant Smoke Tests", () => {
 
   it("should allow platform admin to access platform routes", async () => {
     const res = await api.get("/admin/platform/tenants", { headers: getHeaders(platformAdminId) })
-    // Returns 404 because GET is not implemented, but it bypassed the 400 NOT_ALLOWED middleware
-    expect(res.status).toBe(404)
+    // Returns 200 because GET is actually implemented
+    expect(res.status).toBe(200)
   })
 
   it("should reject tenant admin from accessing platform routes", async () => {
