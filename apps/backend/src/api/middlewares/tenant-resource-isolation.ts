@@ -9,8 +9,9 @@ export const blockTenantMutations = async (
 ) => {
   const ctx = tenantContext.getStore()
 
-  // Platform admins bypass these restrictions
-  if (ctx?.accessMode === "platform") {
+  // Platform Admins always proceed. If they lack a tenant context (impersonation), 
+  // RLS will automatically block their mutations on isolated tables.
+  if (ctx?.accessMode === "platform" || ctx?.accessMode === "platform_impersonation") {
     return next()
   }
 
@@ -29,35 +30,9 @@ export const blockTenantMutations = async (
     }
   }
 
-  const tenantOwnedPaths = [
-    /^\/admin\/regions\/?/
-  ]
-  const isTenantOwnedResource = req.originalUrl && tenantOwnedPaths.some(p => req.originalUrl.match(p))
-  if (isTenantOwnedResource && (req.method === "POST" || req.method === "PUT" || req.method === "DELETE")) {
-    // If platform admin, they MUST have a tenant context (impersonation) to create tenant-owned resources
-    if (ctx?.accessMode === "platform_impersonation") {
-      if ((req.method === "POST" || req.method === "PUT") && !ctx?.tenantId && !req.headers["x-tenant-id"]) {
-        return res.status(403).json({
-          type: "not_allowed",
-          message: "Platform admins must specify a tenant context to mutate tenant-owned resources."
-        })
-      }
-    }
-    return next()
-  }
-  // Platform admins bypass these restrictions for other routes (shared resources)
-  if (ctx?.accessMode === "platform_impersonation") {
-    return next()
-  }
-
-  // Only allow GET requests. Mutations (POST/PUT/DELETE) are blocked.
-  if (req.method !== "GET" && req.method !== "OPTIONS") {
-    return res.status(403).json({
-      type: "not_allowed",
-      message: "You do not have permission to edit other users or shared resources."
-    })
-  }
-
+  // Rely purely on PostgreSQL RLS to block invalid cross-tenant or missing-tenant mutations.
+  // Because all routes this middleware is applied to are now strictly "Tenant-Owned" in the DB,
+  // we do not need to manually block Tenant Admins from mutating them.
   return next()
 }
 
