@@ -1,6 +1,7 @@
 import { defineMiddlewares } from "@medusajs/framework/http"
 import { tenantResolutionMiddleware } from "./middlewares/tenant-resolution"
 import { blockTenantMutations, validateProductCreatePayload } from "./middlewares/tenant-resource-isolation"
+import { cleanResponseDataMiddleware } from "./middlewares/clean-response-data"
 
 // Verify the multi-tenant framework patch is active
 try {
@@ -21,6 +22,10 @@ export default defineMiddlewares({
     {
       matcher: "/admin/*",
       middlewares: [tenantResolutionMiddleware],
+    },
+    {
+      matcher: "/admin/api-keys*",
+      middlewares: [cleanResponseDataMiddleware],
     },
     {
       matcher: "/store/*",
@@ -61,10 +66,6 @@ export default defineMiddlewares({
     },
     {
       matcher: "/admin/tax-regions*",
-      middlewares: [blockTenantMutations],
-    },
-    {
-      matcher: "/admin/users*",
       middlewares: [blockTenantMutations],
     },
     {

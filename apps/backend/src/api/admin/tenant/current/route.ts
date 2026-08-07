@@ -1,18 +1,18 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { TenantContext } from "../../../../utils/tenant-context"
+import { tenantContext } from "../../../../utils/tenant-context"
 
 export const GET = async (
   req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) => {
-  const tenantContext = req.scope.resolve<TenantContext>("tenantContext", { allowUnregistered: true })
+  const ctx = tenantContext.getStore()
 
-  if (!tenantContext || !tenantContext.tenantId) {
+  if (!ctx || !ctx.tenantId) {
     return res.status(404).json({ message: "No active tenant context found." })
   }
 
   return res.json({
-    tenant_id: tenantContext.tenantId,
-    access_mode: tenantContext.accessMode,
+    tenant_id: ctx.tenantId,
+    access_mode: ctx.accessMode,
   })
 }

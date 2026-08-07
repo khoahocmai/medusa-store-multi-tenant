@@ -1,6 +1,7 @@
 import { model } from "@medusajs/framework/utils"
 import { TenantMembership } from "./tenant-membership"
 import { StoreLocator } from "./store-locator"
+import { TenantInvite } from "./tenant-invite"
 
 export const Tenant = model.define("tenant", {
   id: model.id().primaryKey(),
@@ -12,6 +13,9 @@ export const Tenant = model.define("tenant", {
     mappedBy: "tenant",
   }),
   store_locators: model.hasMany(() => StoreLocator, {
+    mappedBy: "tenant",
+  }),
+  invites: model.hasMany(() => TenantInvite, {
     mappedBy: "tenant",
   }),
 })

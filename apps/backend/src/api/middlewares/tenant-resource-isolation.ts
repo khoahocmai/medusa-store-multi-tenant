@@ -8,7 +8,7 @@ export const blockTenantMutations = async (
   next: MedusaNextFunction
 ) => {
   const ctx = tenantContext.getStore()
-  
+
   // Platform admins bypass these restrictions
   if (ctx?.accessMode === "platform") {
     return next()
@@ -19,14 +19,35 @@ export const blockTenantMutations = async (
   // Allow the current user to edit their own profile
   if (req.method === "POST" && req.originalUrl) {
     const actorId = authContext?.actor_id
-    
+
     // Support both /admin/users/me and /admin/users/<actorId>
-    const isProfileUpdate = req.originalUrl.match(/\/admin\/users\/me\/?$/) || 
-                            (actorId && req.originalUrl.match(new RegExp(`\/admin\/users\/${actorId}\/?$`)))
-    
+    const isProfileUpdate = req.originalUrl.match(/\/admin\/users\/me\/?$/) ||
+      (actorId && req.originalUrl.match(new RegExp(`\/admin\/users\/${actorId}\/?$`)))
+
     if (isProfileUpdate) {
       return next()
     }
+  }
+
+  const tenantOwnedPaths = [
+    /^\/admin\/regions\/?/
+  ]
+  const isTenantOwnedResource = req.originalUrl && tenantOwnedPaths.some(p => req.originalUrl.match(p))
+  if (isTenantOwnedResource && (req.method === "POST" || req.method === "PUT" || req.method === "DELETE")) {
+    // If platform admin, they MUST have a tenant context (impersonation) to create tenant-owned resources
+    if (ctx?.accessMode === "platform_impersonation") {
+      if ((req.method === "POST" || req.method === "PUT") && !ctx?.tenantId && !req.headers["x-tenant-id"]) {
+        return res.status(403).json({
+          type: "not_allowed",
+          message: "Platform admins must specify a tenant context to mutate tenant-owned resources."
+        })
+      }
+    }
+    return next()
+  }
+  // Platform admins bypass these restrictions for other routes (shared resources)
+  if (ctx?.accessMode === "platform_impersonation") {
+    return next()
   }
 
   // Only allow GET requests. Mutations (POST/PUT/DELETE) are blocked.
@@ -46,7 +67,7 @@ export const validateProductCreatePayload = async (
   next: MedusaNextFunction
 ) => {
   const ctx = tenantContext.getStore()
-  
+
   // Platform admins bypass these restrictions
   if (ctx?.accessMode === "platform") {
     return next()
@@ -58,14 +79,14 @@ export const validateProductCreatePayload = async (
   }
 
   const body = req.body as any
-  
+
   // Defense in depth: Verify sales_channels IDs
   if (body?.sales_channels && Array.isArray(body.sales_channels)) {
     const scIds = body.sales_channels.map((sc: any) => sc.id).filter(Boolean)
-    
+
     if (scIds.length > 0) {
       const query = req.scope.resolve("query")
-      
+
       // Thanks to PostgreSQL RLS, this query will automatically only return 
       // sales channels belonging to the current tenant.
       const { data: allowedChannels } = await query.graph({
