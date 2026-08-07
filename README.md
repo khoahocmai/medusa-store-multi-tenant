@@ -156,3 +156,8 @@ The storefront is configured via environment variables in `apps/storefront/.env.
 
 - [Medusa Documentation](https://docs.medusajs.com)
 - [Medusa Cloud](https://cloud.medusajs.com)
+
+## Documentation Structure
+
+- `GETTING_STARTED.md`: setup database/environment và playbook vận hành Platform/Tenant.
+- `MULTI_TENANT_DOCS.md`: kiến trúc Multi-Tenant, RLS, middleware, context, APIs, workflows và developer rules.

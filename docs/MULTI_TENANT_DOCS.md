@@ -1,91 +1,338 @@
 # Tài liệu Kỹ thuật Kiến trúc Multi-Tenant
 
-## Tổng quan & Cách sử dụng (Overview & Usage Guide)
+Tài liệu này mô tả **kiến trúc, cơ chế cô lập dữ liệu, authorization, API/workflow và quy tắc dành cho developer** của hệ thống MedusaJS Multi-Tenant.
 
-Kiến trúc Multi-Tenant trong hệ thống Medusa này được xây dựng dựa trên sự kết hợp chặt chẽ giữa Middleware chặn bắt luồng (Request Interception), cơ chế quản lý Context trong Node.js (AsyncLocalStorage) và bảo mật cấp cơ sở dữ liệu (PostgreSQL Row Level Security - RLS).
+Các bước cài đặt môi trường, tạo database roles, chạy migration, bootstrap Platform Admin và onboarding vận hành được đặt trong [`GETTING_STARTED.md`](./GETTING_STARTED.md).
 
-### Cơ chế Cốt lõi (Core Mechanism)
+---
 
-1. **`tenantResolutionMiddleware`**: Được chạy đầu tiên để xác định bối cảnh của Tenant (`tenantContext`). Nó lấy thông tin từ các request headers (`x-tenant-id`), domain truy cập (thông qua `StoreLocator` đối với các route `/store` hoặc `/tenant`), hoặc dựa trên quyền của `actor_id` đã đăng nhập.
-2. **`tenantContext` (AsyncLocalStorage)**: Sau khi xác định được danh tính Tenant, thông tin này (`tenantId`, `actorId`, `accessMode`) sẽ được lưu vào một phiên làm việc bất đồng bộ (AsyncLocalStorage) giúp truyền tải `tenant_id` xuyên suốt quá trình xử lý HTTP request.
-3. **`tenantResourceIsolationMiddleware`**: Chặn các thao tác ghi (Mutations: POST/PUT/DELETE) của người dùng Tenant trên các tài nguyên dùng chung hoặc không có cơ chế cách ly, chỉ cho phép thực thi `GET`.
-4. **`rls-pg-hook.ts` (Database Isolation)**: Cơ chế can thiệp trực tiếp vào thư viện PostgreSQL (`pg.Client.prototype.query`). Trước khi thực hiện bất kỳ truy vấn nghiệp vụ nào, hook này sẽ nhúng cấu hình `SET LOCAL app.current_tenant_id` vào trong Transaction (BEGIN). Kết hợp với PostgreSQL RLS, dữ liệu sẽ tự động được cách ly hoàn toàn theo `tenant_id` đang truy cập mà không cần phải thủ công thêm lệnh `WHERE tenant_id = ...` vào mỗi truy vấn.
+## 1. Tổng quan kiến trúc
 
-Tính năng quản lý sản phẩm theo từng tenant đã được thực hiện thành công.
+Kiến trúc Multi-Tenant được xây dựng dựa trên sự kết hợp của:
 
-### Code snippets: Cách lấy `tenant_id`
+1. Request interception bằng middleware.
+2. Tenant Context trong Node.js bằng `AsyncLocalStorage`.
+3. PostgreSQL Row Level Security (RLS).
+4. PG hook để truyền Tenant Context xuống database.
 
-Trong API Routes, Services, hoặc Subscribers, bạn có thể truy xuất `tenant_id` như sau:
+Mục tiêu là để code nghiệp vụ sử dụng API/Service của Medusa theo cách bình thường, trong khi việc giới hạn dữ liệu theo Tenant được xử lý tập trung bởi middleware và database.
+
+---
+
+## 2. Cơ chế cốt lõi
+
+### 2.1. `tenantResolutionMiddleware`
+
+Middleware này xác định Tenant Context cho request hiện tại.
+
+Nguồn phân giải có thể bao gồm:
+
+- Header `x-tenant-id`.
+- Domain truy cập thông qua `StoreLocator` đối với các route `/store` hoặc `/tenant`.
+- Quyền của `actor_id` đã đăng nhập.
+
+Kết quả phân giải được đưa vào `tenantContext`.
+
+### 2.2. `tenantContext` — AsyncLocalStorage
+
+Tenant Context lưu thông tin của request hiện tại, bao gồm:
+
+- `tenantId`
+- `actorId`
+- `accessMode`
+
+Các giá trị `accessMode` được sử dụng trong tài liệu hiện tại gồm:
+
+```text
+tenant
+platform
+platform_impersonation
+```
+
+Ví dụ lấy Tenant Context trong API route, service hoặc subscriber:
 
 ```typescript
 import { tenantContext } from "../../utils/tenant-context"
 
-// Lấy tenant context hiện hành
 const ctx = tenantContext.getStore()
 
 if (ctx && ctx.tenantId) {
   console.log("Current Tenant ID:", ctx.tenantId)
-  console.log("Access Mode:", ctx.accessMode) // 'tenant' | 'platform' | 'platform_impersonation'
+  console.log("Access Mode:", ctx.accessMode)
 }
 ```
 
-### Code snippet: Ví dụ truy vấn dữ liệu theo Tenant
+### 2.3. `tenantResourceIsolationMiddleware`
 
-Nhờ vào kiến trúc bảo mật cấp CSDL (PostgreSQL RLS), nhà phát triển không cần phải tự lọc `tenant_id`. Các truy vấn sử dụng API cốt lõi sẽ mặc định chỉ trả về dữ liệu của Tenant hiện tại.
+Middleware này bảo vệ các tài nguyên dùng chung hoặc chưa có cơ chế cách ly phù hợp.
+
+Theo thiết kế hiện tại, nó có thể chặn các mutation như:
+
+```text
+POST
+PUT
+DELETE
+```
+
+đối với các tài nguyên không cho phép Tenant ghi trực tiếp, trong khi vẫn cho phép các thao tác đọc phù hợp.
+
+### 2.4. `rls-pg-hook.ts`
+
+PG hook can thiệp vào `pg.Client.prototype.query` để đưa Tenant Context xuống PostgreSQL trước khi thực hiện truy vấn nghiệp vụ.
+
+Tenant ID hiện hành được đưa vào PostgreSQL transaction thông qua setting:
+
+```text
+app.current_tenant_id
+```
+
+Khi kết hợp với RLS policies, PostgreSQL tự giới hạn dữ liệu theo Tenant hiện tại mà application không cần thêm `WHERE tenant_id = ...` vào từng query.
+
+---
+
+## 3. Quy tắc quan trọng khi query dữ liệu
+
+### 3.1. Không hardcode `tenant_id` vào query nghiệp vụ
+
+Không viết:
 
 ```typescript
-// Trong một API route hoặc Service
+// ❌ Không nên
+productService.list({
+  tenant_id: req.tenant_id,
+  title: "Shirt",
+})
+```
+
+Thay vào đó, sử dụng API/Service bình thường:
+
+```typescript
+// ✅ Tenant isolation do Context + RLS xử lý
+productService.list({
+  title: "Shirt",
+})
+```
+
+Ví dụ với Query API:
+
+```typescript
 const query = req.scope.resolve("query")
 
-// Truy vấn này sẽ bị giới hạn bởi RLS Hook. 
-// Chỉ các 'sales_channel' thuộc về 'tenantId' trong Context mới được trả về.
 const { data: allowedChannels } = await query.graph({
   entity: "sales_channel",
-  fields: ["id", "name"]
+  fields: ["id", "name"],
 })
 
 console.log("Sales Channels (Isolated by DB RLS):", allowedChannels)
 ```
 
----
-
-## Luồng quản lý Tenant (Tenant Management Flows)
-
-Việc khởi tạo và cấu hình các Tenant được quản lý bằng bộ API dành riêng cho Platform Admin cùng với sự hỗ trợ của hệ thống Workflows.
-
-### API Endpoints
-
-- **`POST /admin/platform/tenants`**: API tạo Tenant mới. Yêu cầu `actor_id` gửi yêu cầu phải có quyền của Platform Admin.
-- **`GET /admin/platform/tenants`**: Trả về danh sách toàn bộ các Tenant có trong hệ thống cùng các quan hệ (`memberships`, `store_locators`).
-- **`GET /admin/tenant/current`**: Trả về thông tin Tenant hiện tại mà người dùng đang truy cập, đi kèm với quyền `access_mode`.
-
-### Workflows
-
-- **`createTenantWorkflow`**: Chịu trách nhiệm thực hiện tuần tự các tác vụ tạo Tenant:
-  1. `verifyPlatformAdminStep`: Xác thực quyền quản trị nền tảng (Platform Admin) của người thực hiện (`authenticated_actor_id`).
-  2. `validateCreateTenantInputStep`: Kiểm tra dữ liệu hợp lệ (`name`, `handle`, v.v.).
-  3. `createTenantStep`: Ghi nhận dữ liệu thực thể Tenant mới.
-  4. `createTenantMembershipStep`: Cấp quyền tự động (`admin`) cho người dùng sở hữu Tenant đầu tiên.
+Query trên chỉ nên nhìn thấy dữ liệu được RLS cho phép trong Tenant Context hiện tại.
 
 ---
 
-## Quản lý User & Tenant (User-Tenant Management)
+## 4. Database roles và nguyên tắc RLS
 
-### Mô hình Dữ liệu (Data Models)
+PostgreSQL superuser có thể bypass RLS. Vì vậy application runtime và database administration/migration phải dùng các tài khoản khác nhau.
 
-- **`Tenant`**: Chứa thông tin cơ bản về Tenant (`id`, `name`, `handle`, `status`). 
-- **`TenantMembership`**: Đóng vai trò là bảng trung gian liên kết giữa một Người dùng (`actor_id`) và một `Tenant`. Nó định nghĩa cấp bậc quyền hạn trong Tenant thông qua cột `role` (`owner`, `admin`, `member`) và trạng thái `is_active`.
+Cấu hình runtime điển hình:
 
-### Luồng ủy quyền và xác thực (Authorization / Authentication Flow)
+```env
+# Application runtime — non-superuser
+DATABASE_URL=postgres://runtime_role:runtime_password@localhost:6543/medusa_multi_tenant
 
-1. **Platform Admin**: Module xác thực cung cấp hàm `validatePlatformAdmin`. Các request tới `/admin/platform/*` bắt buộc `actor_id` phải tồn tại trong danh sách membership của hệ thống gốc (Platform Memberships).
-2. **Tenant User**:
-   - Khi truy cập `/admin/*` (không phải nền tảng), Middleware sẽ truy vấn `TenantMembership` dựa trên `actorId` hiện tại.
-   - Nếu `actor_id` nằm trong nhiều Tenant, User sẽ phải chủ động cung cấp Header `x-tenant-id` để Middleware phân giải đúng Context (nếu không sẽ văng lỗi `TENANT_SELECTION_REQUIRED`).
-   - Nếu không có quyền đối với `tenant_id` được yêu cầu, API trả về `401 Unauthorized` hoặc `403 Not Allowed`.
-   - Tính năng **Platform Impersonation**: Nếu một Platform Admin cung cấp `x-tenant-id` của một Tenant khác, hệ thống sẽ gán `accessMode = "platform_impersonation"` và lưu lại log kiểm toán (Audit Log) về hành động đóng giả (impersonation) này.
+# Migration / database administration
+DATABASE_SUPER_URL=postgres://postgres:postgres@localhost:6543/medusa_multi_tenant
+```
 
-### API Quản lý Người dùng
+Nguyên tắc bắt buộc:
 
-- **`POST /admin/platform/users`**: API gọi workflow `createTenantUserWorkflow` để tạo một tài khoản User mới và tự động gán vào một `tenant_id` với vai trò (`role`) nhất định.
-- **`GET /admin/platform/users`**: API trả về danh sách User trên toàn hệ thống kèm theo thông tin của Tenant mà User đang được gắn (`tenant_name`, `tenant_role`). Nếu một User không có Membership ở Tenant nào, User đó được coi là thuộc Platform (`is_platform: true`).
+- Application server chạy bằng `DATABASE_URL`.
+- Migration hoặc database administration task cần DDL mới dùng `DATABASE_SUPER_URL`.
+- Không khởi động backend bằng PostgreSQL superuser.
+
+Các lệnh setup cụ thể được đặt trong [`GETTING_STARTED.md`](./GETTING_STARTED.md).
+
+---
+
+## 5. Mô hình dữ liệu User–Tenant
+
+### `Tenant`
+
+Chứa thông tin cơ bản của Tenant, ví dụ:
+
+- `id`
+- `name`
+- `handle`
+- `status`
+
+### `TenantMembership`
+
+Liên kết một user (`actor_id`) với một Tenant.
+
+Membership định nghĩa role của user trong Tenant, ví dụ:
+
+```text
+owner
+admin
+member
+```
+
+và trạng thái `is_active`.
+
+---
+
+## 6. Authorization và Tenant resolution
+
+### 6.1. Platform Admin
+
+Các request tới namespace:
+
+```text
+/admin/platform/*
+```
+
+phải được kiểm tra quyền Platform Admin thông qua cơ chế xác thực/authorization của hệ thống.
+
+### 6.2. Tenant User
+
+Khi user truy cập `/admin/*` ngoài namespace platform:
+
+1. Middleware xác định `actorId` hiện tại.
+2. Hệ thống tìm `TenantMembership` tương ứng.
+3. Tenant Context được thiết lập dựa trên membership và request.
+
+Nếu một `actor_id` thuộc nhiều Tenant, client phải cung cấp:
+
+```http
+x-tenant-id: <tenant-id>
+```
+
+Nếu thiếu Tenant selection trong trường hợp cần thiết, hệ thống có thể trả lỗi:
+
+```text
+TENANT_SELECTION_REQUIRED
+```
+
+Nếu user không có quyền với Tenant được yêu cầu, request có thể bị từ chối bằng `401 Unauthorized` hoặc `403 Not Allowed`.
+
+### 6.3. Platform Impersonation
+
+Khi Platform Admin truy cập trong context của một Tenant khác thông qua `x-tenant-id`, hệ thống sử dụng:
+
+```text
+accessMode = "platform_impersonation"
+```
+
+Theo thiết kế hiện tại, hành động impersonation được ghi Audit Log.
+
+---
+
+## 7. Tenant Management APIs
+
+### `POST /admin/platform/tenants`
+
+Tạo Tenant mới. Request phải được thực hiện bởi Platform Admin hợp lệ.
+
+### `GET /admin/platform/tenants`
+
+Trả về danh sách Tenant cùng các quan hệ cần thiết như:
+
+- memberships
+- store locators
+
+### `GET /admin/tenant/current`
+
+Trả về Tenant Context hiện tại và `access_mode` liên quan.
+
+---
+
+## 8. `createTenantWorkflow`
+
+Workflow tạo Tenant thực hiện tuần tự các bước:
+
+1. `verifyPlatformAdminStep`
+   - Xác minh `authenticated_actor_id` có quyền Platform Admin.
+2. `validateCreateTenantInputStep`
+   - Kiểm tra các input như `name`, `handle`, ...
+3. `createTenantStep`
+   - Tạo thực thể Tenant.
+4. `createTenantMembershipStep`
+   - Gán membership cho user sở hữu Tenant đầu tiên với role phù hợp theo workflow hiện tại.
+
+---
+
+## 9. API quản lý User
+
+### `POST /admin/platform/users`
+
+Gọi `createTenantUserWorkflow` để tạo user và gán user vào một `tenant_id` với role tương ứng.
+
+### `GET /admin/platform/users`
+
+Trả về danh sách user cùng thông tin Tenant liên quan, ví dụ:
+
+- `tenant_name`
+- `tenant_role`
+
+Theo tài liệu hiện tại, user không có Tenant Membership được xem là user thuộc Platform (`is_platform: true`).
+
+---
+
+## 10. Tenant-owned resources
+
+Một số resource được thiết kế thuộc riêng từng Tenant, bao gồm:
+
+- `sales_channel`
+- `stock_location`
+
+Do đó Tenant Admin cần tạo Sales Channel và Stock Location riêng trong quá trình onboarding trước khi cấu hình inventory/sales hoàn chỉnh.
+
+Các bước thao tác dành cho người vận hành nằm trong [`GETTING_STARTED.md`](./GETTING_STARTED.md).
+
+---
+
+## 11. Developer checklist
+
+Trước khi merge một thay đổi liên quan Multi-Tenant, kiểm tra:
+
+- [ ] Không hardcode `tenant_id` vào các query nghiệp vụ nếu RLS đã chịu trách nhiệm isolation.
+- [ ] Request đã đi qua Tenant resolution phù hợp.
+- [ ] Code cần Tenant Context lấy từ `tenantContext` thay vì tự suy diễn Tenant.
+- [ ] Tenant-owned resource không bị truy cập chéo Tenant.
+- [ ] Application runtime không dùng PostgreSQL superuser.
+- [ ] Các platform-only API có kiểm tra Platform Admin.
+- [ ] Trường hợp user thuộc nhiều Tenant xử lý đúng `x-tenant-id`.
+- [ ] Platform impersonation giữ đúng `accessMode` và audit behavior.
+- [ ] Mutation trên shared/unisolated resource được bảo vệ bởi isolation middleware tương ứng.
+
+---
+
+## 12. Phân chia trách nhiệm giữa hai tài liệu
+
+### `GETTING_STARTED.md`
+
+Dành cho setup và vận hành:
+
+- Docker
+- Dependencies
+- `.env`
+- PostgreSQL roles
+- Migrations
+- Platform Admin bootstrap
+- UAT seed
+- Platform/Tenant onboarding
+
+### `MULTI_TENANT_DOCS.md`
+
+Dành cho developer và kiến trúc:
+
+- Tenant resolution
+- AsyncLocalStorage context
+- Resource isolation middleware
+- PG hook + PostgreSQL RLS
+- Database role separation
+- Data model
+- Authorization
+- APIs
+- Workflows
+- Developer rules/checklist

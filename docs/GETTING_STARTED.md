@@ -1,111 +1,192 @@
-# MedusaJS Multi-Tenant: Getting Started & Playbook
+# MedusaJS Multi-Tenant: Getting Started & Operations Guide
 
-Chào mừng bạn đến với tài liệu hướng dẫn vận hành hệ thống MedusaJS Multi-Tenant. Hệ thống này được xây dựng với kiến trúc **PostgreSQL Row Level Security (RLS)**, đảm bảo dữ liệu của các cửa hàng (Tenant) được cô lập hoàn toàn ở mức Database, đồng thời giữ cho code logic (Application level) cực kỳ gọn nhẹ và chuẩn Medusa.
+Tài liệu này là hướng dẫn chính để **khởi tạo môi trường từ database trắng**, tạo Platform Admin và thực hiện các bước vận hành ban đầu cho hệ thống MedusaJS Multi-Tenant.
 
-Tài liệu này sẽ hướng dẫn bạn step-by-step cách khởi tạo hệ thống từ một database trắng tinh, cách quản lý cấp Platform, và cách các Tenant vận hành.
+Hệ thống sử dụng PostgreSQL Row Level Security (RLS) để cô lập dữ liệu giữa các Tenant. Phần giải thích sâu về middleware, AsyncLocalStorage, PG hook, API, workflow và các quy tắc dành cho developer được tách riêng trong [`MULTI_TENANT_DOCS.md`](./MULTI_TENANT_DOCS.md).
 
 ---
 
-## Phase 1: Database Initialization & Khởi tạo Hệ thống
+## 1. Khởi tạo môi trường từ số 0
 
-Nếu bạn vừa clone project về hoặc reset lại database, hãy làm theo các bước sau để xây dựng nền móng an toàn cho hệ thống Multi-Tenant.
+### Bước 1: Khởi động PostgreSQL và Redis
 
-### 1. Khởi tạo tài khoản Non-Superuser (Bắt buộc cho RLS)
-Trong file `.env`, hãy thiết lập tạm thời `DATABASE_URL` trỏ đến tài khoản Superuser (ví dụ: `postgres`), sau đó chạy script tạo tài khoản giới hạn:
+Tại thư mục gốc của project:
 
 ```bash
-npm run seed:rls-user
+docker compose up -d
 ```
-*(Ghi chú: Script này sẽ kết nối bằng quyền Superuser để tạo ra một user mới bị giới hạn quyền hạn, chuyên dùng để chạy ứng dụng nhằm đảm bảo PostgreSQL không bỏ qua luật RLS).*
 
-Sau khi chạy xong, hãy quan sát **kết quả log trên màn hình (console)**. Script sẽ in ra chính xác chuỗi kết nối an toàn vừa được tạo (thường mặc định là user `medusa_app_user`). Hãy copy chuỗi đó và **cập nhật lại file `.env`** thành 2 biến tách biệt:
+Có thể dùng `docker ps` để kiểm tra tên hoặc Container ID của PostgreSQL container. Giá trị này sẽ được dùng ở bước thiết lập database roles.
+
+### Bước 2: Cài dependencies và cấu hình backend
+
+```bash
+cd apps/backend
+npm install
+
+# Tạo file .env nếu chưa có
+cp .env.template .env
+
+npm run build
+```
+
+### Bước 3: Thiết lập PostgreSQL roles cho RLS
+
+Kiến trúc Multi-Tenant sử dụng các role riêng cho migration và runtime. Application phải chạy bằng tài khoản không có quyền bypass RLS.
+
+Đảm bảo đang đứng tại `apps/backend`, sau đó chạy `src/scripts/setup-db-roles.sql` bằng PostgreSQL container.
+
+#### Windows PowerShell
+
+```powershell
+Get-Content src/scripts/setup-db-roles.sql | docker exec -i <tên_container_postgres> psql -U postgres -d medusa_multi_tenant -v runtime_password="'runtime_password'"
+```
+
+#### Windows CMD
+
+```cmd
+docker exec -i <tên_container_postgres> psql -U postgres -d medusa_multi_tenant -v runtime_password="'runtime_password'" < src/scripts/setup-db-roles.sql
+```
+
+#### Ubuntu / Linux / macOS / Git Bash
+
+```bash
+docker exec -i <tên_container_postgres> psql -U postgres -d medusa_multi_tenant -v runtime_password="'runtime_password'" < src/scripts/setup-db-roles.sql
+```
+
+### Bước 4: Kiểm tra cấu hình database trong `.env`
+
+Application và migration phải dùng hai connection string khác nhau:
+
 ```env
-DATABASE_SUPER_URL=postgres://postgres:postgres@localhost:5432/medusa_db
-DATABASE_URL=postgres://medusa_app_user:postgres@localhost:5432/medusa_db
+# Application runtime: tài khoản bị giới hạn, không bypass RLS
+DATABASE_URL=postgres://runtime_role:runtime_password@localhost:6543/medusa_multi_tenant
+
+# Database administration / migration
+DATABASE_SUPER_URL=postgres://postgres:postgres@localhost:6543/medusa_multi_tenant
 ```
 
-### 2. Chạy Database Migrations
-Tiến hành tạo cấu trúc bảng, RLS Policies, và Database Triggers. Lệnh này cần quyền cao nhất để thay đổi rules. Tùy thuộc vào hệ điều hành bạn đang sử dụng, hãy chạy một trong hai lệnh sau:
+> Không chạy application bằng PostgreSQL superuser. Superuser có thể bypass RLS và làm mất cơ chế cô lập dữ liệu giữa các Tenant.
 
-**Windows:**
-```bash
+### Bước 5: Chạy database migrations
+
+Migration cần quyền DDL nên chạy bằng `DATABASE_SUPER_URL`.
+
+#### Windows PowerShell
+
+```powershell
 $env:DATABASE_URL=$env:DATABASE_SUPER_URL; npx medusa db:migrate
 ```
 
-**macOS/Linux:**
+#### Windows CMD
+
+```cmd
+set DATABASE_URL=%DATABASE_SUPER_URL% && npx medusa db:migrate
+```
+
+#### Ubuntu / Linux / macOS / Git Bash
+
 ```bash
 DATABASE_URL=$DATABASE_SUPER_URL npx medusa db:migrate
 ```
-*(Giải thích: Lệnh này sẽ tạm thời sử dụng biến `DATABASE_SUPER_URL` có quyền superuser để tạo bảng và RLS policies. Sau khi chạy xong, hệ thống sẽ tự động trả lại quyền non-superuser cho biến `DATABASE_URL` khi bạn chạy server ứng dụng).*
 
-### 3. Chạy Script Bootstrap
-Để hệ thống có thể hoạt động, bạn cần một tài khoản **Platform Admin (Super Admin)**. Chúng tôi đã chuẩn bị sẵn một script bootstrap để tạo tự động tài khoản này, cùng với Tenant mặc định và Store mặc định.
+Nếu terminal không tự load biến từ `.env`, có thể truyền trực tiếp connection string cho tiến trình migrate.
+
+#### Khi thêm Custom Module mới
+
+Nếu Custom Module chưa có migration file, phải generate migration trước:
 
 ```bash
-npm run seed:platform-admin
-# hoặc
-npx ts-node src/scripts/bootstrap-platform-admin.ts
+npx medusa db:generate <module-name>
 ```
-Script này sẽ thực hiện:
-- Khởi tạo `PlatformMembership` (cấp quyền tối cao vượt RLS) cho tài khoản admin của bạn.
-- Tạo một Default Tenant và Default Store.
 
----
+Sau đó mới chạy `npx medusa db:migrate`.
 
-## Phase 2: Quản lý cấp Platform (Dành cho Super Admin)
+### Bước 6: Tạo Platform Admin
 
-Platform Admin là người có quyền cao nhất, quản lý toàn bộ hệ thống và cấp phát tài nguyên cho các Tenant.
+#### 6.1. Tạo user
 
-1. **Đăng nhập:** Mở giao diện Medusa Admin UI (thường ở `http://localhost:9000/app`) và đăng nhập bằng tài khoản Super Admin vừa được bootstrap.
-2. **Tạo Tenant mới:** 
-   - Điều hướng tới mục quản lý **Tenants** (được custom riêng cho dự án).
-   - Nhấn **Create Tenant** và điền thông tin (ví dụ: *Shop A*, tên miền, và email của chủ Shop).
-3. **Cơ chế tự động ngầm:** Khi Super Admin tạo Tenant, Workflow của hệ thống sẽ **tự động** thực thi việc tạo ra một `TenantMembership` (với role `admin`) gán cho email chủ Shop A. Từ lúc này, chủ Shop A đã có tài khoản hợp lệ để bắt đầu kinh doanh.
-
----
-
-## Phase 3: Tenant Onboarding (Dành cho Tenant Admin)
-
-Dưới góc độ của một chủ cửa hàng (Tenant Admin), việc onboarding diễn ra vô cùng tự nhiên và độc lập.
-
-1. **Đăng nhập:** Chủ Shop A đăng nhập vào Admin UI bằng tài khoản được cấp. Lúc này, do họ chỉ có `TenantMembership`, mọi truy vấn của họ đều sẽ bị giới hạn bởi `tenant_id` của Shop A.
-2. **Khởi tạo Dữ liệu Bán hàng (Products, Orders, Promotions...):**
-   - Tenant Admin có thể bắt đầu tạo Product, Category, cấu hình Promotion, hay xử lý Order.
-   - **Phép màu của RLS:** RLS đã bao bọc mọi thứ. Tenant Admin không cần phải biết về sự tồn tại của `tenant_id`. Mọi record họ tạo ra sẽ được **tự động gán `tenant_id` của Shop A** bởi Database Trigger. Mọi record họ truy vấn sẽ tự động bị filter ẩn bởi RLS Policy. Dữ liệu của họ hoàn toàn an toàn và cô lập với Shop B.
-3. **⚠️ Hành động BẮT BUỘC đầu tiên: Tạo Sales Channel & Stock Location:**
-   - Trong hệ thống của chúng ta, `sales_channel` và `stock_location` là các bảng thuộc **Tenant-Owned**. Điều này có nghĩa là chúng KHÔNG được chia sẻ giữa các Tenant.
-   - Ngay sau khi đăng nhập, Tenant Admin phải tạo một Sales Channel (Kênh bán hàng) và một Stock Location (Kho vật lý) riêng của họ để có thể bắt đầu gán sản phẩm vào kho và xuất bán.
-
----
-
-## Phase 4: Lưu ý Sống còn cho Developer
-
-Để giữ cho kiến trúc này sạch và an toàn, tất cả các Developer tham gia dự án phải ghi nhớ 2 quy tắc vàng:
-
-### 1. KHÔNG hardcode `tenant_id` vào query
-Bạn không bao giờ phải viết những dòng code như:
-```typescript
-// ❌ SAI (Thừa thãi và nguy hiểm)
-productService.list({ tenant_id: req.tenant_id, title: 'Shirt' })
+```bash
+npx medusa user -e <địa-chỉ-email> -p <mật-khẩu>
 ```
-Hãy sử dụng API và Service của Medusa như bình thường:
-```typescript
-// ✅ ĐÚNG (Để Database và Middleware tự lo)
-productService.list({ title: 'Shirt' })
-```
-Hệ thống Middleware (AsyncLocalStorage) và PG-Hook đã tự động bắt `tenant_id` từ session và đưa xuống PostgreSQL transaction rồi.
 
-### 2. Tách biệt tài khoản Database (Non-superuser vs Superuser)
-PostgreSQL mặc định sẽ **BỎ QUA** toàn bộ luật RLS nếu query được thực thi bởi một user có quyền `SUPERUSER`. Do đó, ta cần tách biệt user chạy migration và user chạy app.
+#### 6.2. Khai báo email Platform Admin
 
-**Cấu hình `.env` tự động (Best Practice):**
-Hãy thiết lập 2 biến môi trường riêng biệt trong file `.env` của bạn:
+Trong `apps/backend/.env`:
 
 ```env
-# 1. Trỏ tới user bị giới hạn (non-superuser). App sẽ mặc định dùng cái này.
-DATABASE_URL=postgres://runtime_role:runtime_password@localhost:5432/medusa_db
-
-# 2. Trỏ tới postgres (superuser). Chỉ dùng khi chạy lệnh Migration.
-DATABASE_SUPER_URL=postgres://postgres:postgres@localhost:5432/medusa_db
+PLATFORM_ADMIN_EMAIL=<địa-chỉ-email>
 ```
-Bằng cách này, Server Application sẽ luôn chạy an toàn qua `DATABASE_URL` (bị giới hạn RLS), tránh nguy cơ rò rỉ dữ liệu chéo giữa các Tenant.
+
+#### 6.3. Bootstrap quyền Platform Admin và dữ liệu mặc định
+
+```bash
+npx medusa exec ./src/scripts/bootstrap-platform-admin.ts
+```
+
+Script bootstrap sử dụng user được xác định bởi `PLATFORM_ADMIN_EMAIL`, cấp quyền Platform Admin và thiết lập Tenant/Store mặc định cho hệ thống.
+
+### Bước 7: Seed dữ liệu UAT (tùy chọn)
+
+Nếu cần dữ liệu mẫu cho môi trường Test/UAT, bao gồm Tenant A, Tenant B và Store Locator mẫu:
+
+```bash
+npx medusa exec ./src/scripts/seed-uat.ts
+```
+
+### Bước 8: Khởi động backend
+
+```bash
+npm run dev
+```
+
+Nếu gặp lỗi:
+
+```text
+FATAL: Backend process is running as a SUPERUSER. Row Level Security will be bypassed!
+```
+
+hãy đóng terminal hiện tại, mở terminal mới rồi chạy lại `npm run dev` để process đọc lại `DATABASE_URL` dành cho runtime từ `.env`.
+
+---
+
+## 2. Platform Admin: vận hành hệ thống
+
+Platform Admin quản lý cấp nền tảng và tạo tài nguyên cho các Tenant.
+
+1. Mở Medusa Admin UI, thường tại:
+
+   ```text
+   http://localhost:9000/app
+   ```
+
+2. Đăng nhập bằng tài khoản Platform Admin đã bootstrap.
+3. Mở phần quản lý **Tenants** của project.
+4. Chọn **Create Tenant** và nhập các thông tin cần thiết như tên Tenant, handle/domain và thông tin user sở hữu Tenant.
+5. Workflow tạo Tenant sẽ tạo Tenant và gán `TenantMembership` cho user sở hữu với role phù hợp.
+
+Chi tiết API và workflow xem tại [`MULTI_TENANT_DOCS.md`](./MULTI_TENANT_DOCS.md).
+
+---
+
+## 3. Tenant Admin: onboarding ban đầu
+
+Sau khi được gán `TenantMembership`, Tenant Admin có thể đăng nhập và bắt đầu cấu hình dữ liệu của Tenant.
+
+### Các bước ban đầu
+
+1. Đăng nhập Admin UI bằng tài khoản Tenant Admin.
+2. Tạo dữ liệu kinh doanh của Tenant như Product, Category, Promotion và các tài nguyên liên quan.
+3. Tạo **Sales Channel** riêng của Tenant.
+4. Tạo **Stock Location** riêng của Tenant.
+5. Gán Product/Inventory vào Sales Channel và Stock Location tương ứng trước khi bắt đầu bán hàng.
+
+`sales_channel` và `stock_location` được thiết kế là tài nguyên thuộc Tenant, không dùng chung giữa các Tenant.
+
+Tenant Admin không cần tự thêm `tenant_id` vào các query nghiệp vụ; cơ chế phân giải Tenant Context và PostgreSQL RLS chịu trách nhiệm cô lập dữ liệu. Quy tắc kỹ thuật này được mô tả chi tiết trong tài liệu kiến trúc.
+
+---
+
+## 4. Tài liệu liên quan
+
+- [`MULTI_TENANT_DOCS.md`](./MULTI_TENANT_DOCS.md): kiến trúc Multi-Tenant, Tenant Context, RLS hook, API, workflows, authorization và quy tắc dành cho developer.
