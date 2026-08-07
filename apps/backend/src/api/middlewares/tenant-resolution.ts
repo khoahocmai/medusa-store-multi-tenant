@@ -22,7 +22,6 @@ export const tenantResolutionMiddleware = async (
     return next()
   }
 
-
   const tenantModule: any = req.scope.resolve(TENANT_MODULE)
 
   if (cleanPath.startsWith("/admin")) {
@@ -49,7 +48,16 @@ export const tenantResolutionMiddleware = async (
       // Tenant routes: Strict tenant-membership verification
       if (!tenantId) {
         const tMemberships = await tenantModule.listTenantMemberships({ actor_id: actorId, is_active: true })
+        
         if (tMemberships.length === 0) {
+          // If no tenant memberships, check if platform admin and accessing a global/mixed route
+          if (cleanPath.startsWith("/admin/users") || cleanPath.startsWith("/admin/invites")) {
+            const pMemberships = await tenantModule.listPlatformMemberships({ actor_id: actorId, is_active: true })
+            if (pMemberships.length > 0) {
+              contextData = { tenantId: null, accessMode: "platform" }
+              return tenantContext.run(contextData, next)
+            }
+          }
           throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Not a member of any tenant")
         }
 
@@ -86,6 +94,7 @@ export const tenantResolutionMiddleware = async (
               timestamp: new Date().toISOString()
             }))
           } else {
+            console.log("FAILED TENANT MEMBERSHIP", { tenantId, actorId, tMemberships, path: cleanPath })
             throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "Not a member of this tenant")
           }
         }
@@ -106,11 +115,14 @@ export const tenantResolutionMiddleware = async (
     // req.hostname respects Express 'trust proxy' setting and strips the port automatically.
     const normalizedHost = req.hostname || ""
     const pubKey = req.headers["x-publishable-api-key"] as string
+    const headerTenantId = req.headers["x-tenant-id"] as string
 
     let tenantId = null
     let storeIds: string[] = []
 
-    if (normalizedHost) {
+    if (headerTenantId) {
+      tenantId = headerTenantId
+    } else if (normalizedHost) {
       const locators = await tenantModule.listStoreLocators({
         domain: normalizedHost
       })

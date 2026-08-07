@@ -50,7 +50,6 @@ export function installRlsPgHook(): void {
 
     const ctx = tenantContext.getStore()
     const targetTenantId = ctx?.accessMode === "platform" ? "" : (ctx?.tenantId ?? "")
-    const targetIsPlatform = "false" 
 
     // Retrieve existing lock or start resolved
     const lock = clientLocks.get(this) || Promise.resolve()
@@ -85,12 +84,10 @@ export function installRlsPgHook(): void {
         originalQuery.call(
           this,
           {
-            text: "SELECT set_config($1, $2, false), set_config($3, $4, false)",
+            text: "SELECT set_config($1, $2, false)",
             values: [
               "app.current_tenant_id",
               targetTenantId,
-              "app.is_platform_admin",
-              targetIsPlatform,
             ],
           },
           (err: Error, res: any) => (err ? reject(err) : resolve())
@@ -119,7 +116,7 @@ export function installRlsPgHook(): void {
           originalQuery.call(
             this,
             {
-              text: "SELECT set_config('app.current_tenant_id', '', false), set_config('app.is_platform_admin', 'false', false)",
+              text: "SELECT set_config('app.current_tenant_id', '', false)",
             },
             (err: Error, res: any) => (err ? reject(err) : resolve())
           )
